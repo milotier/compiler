@@ -68,7 +68,7 @@ void TableFree(table *, void (*)(void *));
 )
 #define ArrayRemove(a, i) ( \
 	(a)->len--, \
-	memmove((a)->data + i, (a)->data + i + 1, (a)->len - i) \
+	memmove((a)->data + i, (a)->data + i + 1, sizeof(*(a)->data) * ((a)->len - i)) \
 )
 
 #endif /* COMMON_H */

@@ -9,7 +9,7 @@
 #include "parser.h"
 
 /* function implementations */
-#define AllocFunc(lower, upper, fullUpper) \
+#define ALLOC_FUNC(lower, upper, fullUpper) \
 static lower##_expr * \
 Alloc##upper##Expr(void) \
 { \
@@ -19,14 +19,24 @@ Alloc##upper##Expr(void) \
 	return expr; \
 }
 
-AllocFunc(int, Int, INT);
-AllocFunc(float, Float, FLOAT);
-AllocFunc(char, Char, CHAR);
-AllocFunc(str, Str, STR);
-AllocFunc(member, Member, MEMBER);
-AllocFunc(ident, Ident, IDENT);
-AllocFunc(unop, Unop, UNOP);
-AllocFunc(binop, Binop, BINOP);
+ALLOC_FUNC(int, Int, INT);
+ALLOC_FUNC(float, Float, FLOAT);
+ALLOC_FUNC(bool, Bool, BOOL);
+ALLOC_FUNC(char, Char, CHAR);
+ALLOC_FUNC(str, Str, STR);
+ALLOC_FUNC(member, Member, MEMBER);
+ALLOC_FUNC(func, Func, FUNC);
+ALLOC_FUNC(ident, Ident, IDENT);
+ALLOC_FUNC(unop, Unop, UNOP);
+ALLOC_FUNC(binop, Binop, BINOP);
+
+#define HANDLE_TOKEN(tokType, expr_type, Func, val) \
+	case tokType: { \
+		expr_type *expr = Func(); \
+		expr->header.pos = tok.pos; \
+		expr->value = val; \
+		return (expr_header *)expr; \
+	} break;
 
 expr_header *
 ParseSingularExpr(void)
@@ -43,38 +53,14 @@ ParseSingularExpr(void)
 		expr->isParenthesized = 1;
 		return expr;
 	} break;
-	case TOK_INT: {
-		int_expr *expr = AllocIntExpr();
-		expr->header.pos = tok.pos;
-		expr->value = tok.val.i;
-		return (expr_header *)expr;
-	} break;
-	case TOK_FLOAT: {
-		float_expr *expr = AllocFloatExpr();
-		expr->header.pos = tok.pos;
-		expr->value = tok.val.f;
-		return (expr_header *)expr;
-	} break;
-	case TOK_CHAR: {
-		char_expr *expr = AllocCharExpr();
-		expr->header.pos = tok.pos;
-		expr->value = tok.val.i;
-		return (expr_header *)expr;
-	} break;
-	case TOK_STR: {
-		str_expr *expr = AllocStrExpr();
-		expr->header.pos = tok.pos;
-		expr->value = tok.val.s;
-		return (expr_header *)expr;
-	} break;
-	case TOK_IDENT: {
-		ident_expr *expr = AllocIdentExpr();
-		expr->header.pos = tok.pos;
-		expr->value = tok.val.s;
-		return (expr_header *)expr;
-	} break;
+	HANDLE_TOKEN(TOK_INT, int_expr, AllocIntExpr, tok.val.i)
+	HANDLE_TOKEN(TOK_FLOAT, float_expr, AllocFloatExpr, tok.val.f)
+	HANDLE_TOKEN(TOK_BOOL, bool_expr, AllocBoolExpr, (unsigned int)tok.val.i)
+	HANDLE_TOKEN(TOK_CHAR, char_expr, AllocCharExpr, tok.val.i)
+	HANDLE_TOKEN(TOK_STR, str_expr, AllocStrExpr, tok.val.s)
+	HANDLE_TOKEN(TOK_IDENT, ident_expr, AllocIdentExpr, tok.val.s)
 	default:
-	      Error(tok.pos, "unexpected token found while parsing expression");
+		Error(tok.pos, "unexpected token found while parsing expression");
 	}
 }
 
@@ -85,22 +71,29 @@ ParsePostfixExpr(void)
 	expr_header *expr = child;
 	token tok = PeekToken(1);
 
-	while (tok.type == '^' || tok.type == '.' || tok.type == '[') {
-		NextToken();
-
+	while (tok.type == '^' || tok.type == '.' ||
+	       tok.type == '[' || tok.type == '(') {
 		if (tok.type == '^') {
+			char nextType = PeekToken(2).type;
+			if (nextType == '(' || (nextType >= FIRST_LIT_TOK &&
+						nextType <= LAST_LIT_TOK))
+				break;
+
+			NextToken();
 			expr = (expr_header *)AllocUnopExpr();
 			((unop_expr *)expr)->type = UNOP_DEREF;
 			((unop_expr *)expr)->child = child;
 			child = expr;
 		} else if (tok.type == '.') {
+			NextToken();
 			expr = (expr_header *)AllocMemberExpr();
 			((member_expr *)expr)->child = child;
 			tok = NextToken();
 			if (tok.type != TOK_IDENT)
 				Error(tok.pos, "expected member name after '.'");
 			((member_expr *)expr)->member = tok.val.s;
-		} else {
+		} else if (tok.type == '[') {
+			NextToken();
 			expr = (expr_header *)AllocBinopExpr();
 			((binop_expr *)expr)->type = BINOP_INDEX;
 			((binop_expr *)expr)->left = child;
@@ -108,6 +101,18 @@ ParsePostfixExpr(void)
 			tok = NextToken();
 			if (tok.type != ']')
 				Error(tok.pos, "expected closing bracket");
+		} else {
+			NextToken();
+			expr = (expr_header *)AllocFuncExpr();
+			((func_expr *)expr)->func = child;
+			while (tok.type != ')') {
+				ArrayAdd(&((func_expr *)expr)->args, ParseExpr());
+				tok = NextToken();
+				if (tok.type == ',' && PeekToken(1).type == ')')
+					break;
+				if (tok.type != ',' && tok.type != ')')
+					Error(tok.pos, "expected comma or closing parenthesis");
+			}
 		}
 
 		tok = PeekToken(1);
@@ -265,13 +270,13 @@ ParseExpr(void)
 	return expr;
 }
 
-/* Only used for debugging */
 void
 PrintExpr(expr_header *expr)
 {
 	switch (expr->type) {
 	case EXPR_INT: printf("%llu", ((int_expr *)expr)->value); break;
 	case EXPR_FLOAT: printf("%f", ((float_expr *)expr)->value); break;
+	case EXPR_BOOL: printf("%s", ((bool_expr *)expr)->value ? "true" : "false"); break;
 	case EXPR_CHAR: printf("'%lc'", (wint_t)((char_expr *)expr)->value); break;
 	case EXPR_STR: printf("\"%s\"", ((str_expr *)expr)->value.str); break;
 	case EXPR_IDENT: printf("%s", ((ident_expr *)expr)->value.str); break;
@@ -280,6 +285,19 @@ PrintExpr(expr_header *expr)
 		printf("(");
 		PrintExpr(member->child);
 		printf(").%s", member->member.str);
+	} break;
+	case EXPR_FUNC: {
+		func_expr *func = (func_expr *)expr;
+		unsigned int i;
+		printf("(");
+		PrintExpr(func->func);
+		printf(")(");
+		for (i = 0; i < func->args.len; i++) {
+			PrintExpr(func->args.data[i]);
+			if (i != func->args.len - 1)
+				printf(", ");
+		}
+		printf(")");
 	} break;
 	case EXPR_UNOP: {
 		unop_expr *unop = (unop_expr *)expr;

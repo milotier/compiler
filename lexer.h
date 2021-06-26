@@ -6,10 +6,13 @@ enum {
 	TOK_EOF,
 
 	TOK_IDENT,
+        FIRST_LIT_TOK = TOK_IDENT,
 	TOK_STR,
 	TOK_CHAR,
 	TOK_INT,
 	TOK_FLOAT,
+	TOK_BOOL,
+        LAST_LIT_TOK = TOK_BOOL,
 
 	TOK_ARROW,
 
@@ -32,6 +35,14 @@ enum {
 	TOK_BITXOR_ASS,
 	TOK_LSHIFT_ASS,
 	TOK_RSHIFT_ASS,
+
+	TOK_IF,
+	TOK_ELSE,
+	TOK_WHILE,
+	TOK_FOR,
+	TOK_BREAK,
+	TOK_CONTINUE,
+	TOK_RETURN,
 };
 typedef struct {
 	union {

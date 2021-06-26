@@ -43,6 +43,7 @@ PrintToken(token tok)
 	case TOK_CHAR: printf("'%lc'", (wchar_t)tok.val.i); break;
 	case TOK_INT: printf("%llu", tok.val.i); break;
 	case TOK_FLOAT: printf("%f", tok.val.f); break;
+	case TOK_BOOL: printf("%s", tok.val.i ? "true" : "false"); break;
 	case TOK_ARROW: printf("->"); break;
 	case TOK_LSHIFT: printf("<<"); break;
 	case TOK_RSHIFT: printf(">>"); break;
@@ -367,8 +368,27 @@ NextLiteralToken(void)
 			}
 		}
 
-		tok.type = TOK_IDENT;
-		tok.val.s = AddSymbol(buf.data, buf.len);
+                if (strcmp(buf.data, "true") == 0) {
+			tok.type = TOK_BOOL;
+			tok.val.i = 1;
+                } else if (strcmp(buf.data, "false") == 0) {
+			tok.type = TOK_BOOL;
+			tok.val.i = 0;
+                } else if (strcmp(buf.data, "while") == 0) {
+			tok.type = TOK_WHILE;
+                } else if (strcmp(buf.data, "for") == 0) {
+			tok.type = TOK_FOR;
+                } else if (strcmp(buf.data, "break") == 0) {
+			tok.type = TOK_BREAK;
+                } else if (strcmp(buf.data, "continue") == 0) {
+			tok.type = TOK_CONTINUE;
+                } else if (strcmp(buf.data, "return") == 0) {
+			tok.type = TOK_RETURN;
+                } else {
+			tok.type = TOK_IDENT;
+			tok.val.s = AddSymbol(buf.data, buf.len);
+                }
+
 		StringFree(&buf);
 		return tok;
 	}

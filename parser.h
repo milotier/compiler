@@ -6,10 +6,12 @@
 enum {
 	EXPR_INT,
 	EXPR_FLOAT,
+	EXPR_BOOL,
 	EXPR_CHAR,
 	EXPR_STR,
 	EXPR_IDENT,
 	EXPR_MEMBER,
+	EXPR_FUNC,
 	EXPR_UNOP,
 	EXPR_BINOP,
 };
@@ -22,6 +24,11 @@ typedef struct {
 	expr_header header;
 	unsigned long long value;
 } int_expr;
+
+typedef struct {
+	expr_header header;
+	unsigned int value;
+} bool_expr;
 
 typedef struct {
 	expr_header header;
@@ -43,6 +50,12 @@ typedef struct {
 	expr_header *child;
 	symbol member;
 } member_expr;
+
+typedef struct {
+	expr_header header;
+	expr_header *func;
+	array_type(expr_header *) args;
+} func_expr;
 
 enum {
 	UNOP_DEREF,
@@ -99,7 +112,9 @@ typedef struct {
 } binop_expr;
 
 /* function declarations */
+
 expr_header *ParseExpr(void);
+/* Only used for debugging */
 void PrintExpr(expr_header *expr);
 
 #endif /* PARSER_H */
