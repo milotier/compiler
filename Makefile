@@ -1,4 +1,4 @@
-SRC=compiler.c common.c lexer.c
+SRC=compiler.c common.c lexer.c parser.c
 OBJ=$(SRC:.c=.o)
 CFLAGS=-Wall -Wextra -Wshadow -Wconversion -Wimplicit
 OUT=compiler

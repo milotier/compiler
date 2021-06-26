@@ -1,18 +1,1 @@
-10 20 30
-foo
-bar
-baz
-boop
-"string " " more string"
-foob bar
-1308.423
-
-// This is a line comment /*
-/* This is a /* nested */
- * multiline
- * comment */
-
-main :: () {
-    foo := 10
-    bar := 3
-}
+foo == bar + 10 && (!baz[0])

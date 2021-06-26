@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <locale.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,6 +15,8 @@
 
 #include "common.h"
 #include "lexer.h"
+#include "parser.h"
+
 
 /* function implementations */
 static void
@@ -28,7 +31,10 @@ main(int argc, char *argv[])
 	struct stat fileStat;
 	int i, status, srcFile;
 	unsigned int totalRead;
-	token tok;
+
+	/* To make sure unicode code points in character literals are printed
+	 * correctly */
+	setlocale(LC_ALL, "en_US.UTF-8");
 
 	argv0 = argv[0];
 
@@ -63,8 +69,5 @@ main(int argc, char *argv[])
 		totalRead += (unsigned int)bytesRead;
 	}
 
-	while ((tok = NextToken()).type != TOK_EOF) {
-		PrintToken(tok);
-		putchar('\n');
-	}
+	PrintExpr(ParseExpr());
 }

@@ -21,7 +21,7 @@ GetChar(void)
 		return EOF;
 
 	c = srcCode[srcIndex];
-	if (c <= 32 && c != '\n' && c != '\r' && c != ' ' && c != '\t')
+	if ((unsigned int)c <= 32 && c != '\n' && c != '\r' && c != ' ' && c != '\t')
 		Error(srcIndex, "found illegal character 0x%hhx", (char)c);
 	srcIndex++;
 	return c;
@@ -40,7 +40,7 @@ PrintToken(token tok)
 	case TOK_EOF: printf("EOF"); break;
 	case TOK_IDENT: printf("%s", tok.val.s.str); break;
 	case TOK_STR: printf("\"%s\"", tok.val.s.str); break;
-	case TOK_CHAR: printf("'%s'", tok.val.s.str); break;
+	case TOK_CHAR: printf("'%lc'", (wchar_t)tok.val.i); break;
 	case TOK_INT: printf("%llu", tok.val.i); break;
 	case TOK_FLOAT: printf("%f", tok.val.f); break;
 	case TOK_ARROW: printf("->"); break;
@@ -182,7 +182,7 @@ GetEscape(void)
 }
 
 static symbol
-ReadString(char end)
+ReadString(void)
 {
 	string buf = {0};
 	symbol sym;
@@ -191,7 +191,7 @@ ReadString(char end)
 		int c = GetChar();
 		if (c == '\\')
 			c = GetEscape();
-		if (c == EOF || c == end)
+		if (c == EOF || c == '"')
 			break;
 		StringAddC(&buf, (char)c);
 	}
@@ -199,6 +199,57 @@ ReadString(char end)
 	sym = AddSymbol(buf.data, buf.len);
 	StringFree(&buf);
 	return sym;
+}
+
+static unsigned long long
+GetCodePoint(void)
+{
+	int c = GetChar();
+	unsigned int uc = (unsigned int)c;
+	if (c == EOF)
+		Error(srcIndex, "unexpected EOF in character literal");
+	if (uc <= 0x7f) {
+		puts("1");
+		return (unsigned long long)c;
+	} else if ((uc & 0xe0) == 0xc0) {
+		unsigned long long buf[2] = {uc & 0x1f};
+		c = GetChar();
+		uc = (unsigned int)c;
+		if (c == EOF)
+			Error(srcIndex, "unexpected EOF in character literal");
+		if ((uc & 0xc0) != 0x80)
+			Error(srcIndex, "invalid byte in character literal");
+		buf[1] = uc & 0x3f;
+		return buf[1] | (buf[0] << 6);
+	} else if ((c & 0xf0) == 0xe0) {
+		unsigned long long buf[3] = {uc & 0xf};
+		unsigned int i;
+		for (i = 1; i < LEN(buf); i++) {
+			c = GetChar();
+			uc = (unsigned int)c;
+			if (c == EOF)
+				Error(srcIndex, "unexpected EOF in character literal");
+			if ((uc & 0xc0) != 0x80)
+				Error(srcIndex, "invalid byte in character literal");
+			buf[i] = uc & 0x3f;
+		}
+		return buf[2] | (buf[1] << 6) | (buf[0] << 12);
+	} else if ((uc & 0xf8) == 0xf0) {
+		unsigned long long buf[4] = {uc & 0x7};
+		unsigned int i;
+		for (i = 1; i < LEN(buf); i++) {
+			c = GetChar();
+			uc = (unsigned int)c;
+			if (c == EOF)
+				Error(srcIndex, "unexpected EOF in character literal");
+			if ((uc & 0xc0) != 0x80)
+				Error(srcIndex, "invalid byte in character literal");
+			buf[i] = uc & 0x3f;
+		}
+		return buf[3] | (buf[2] << 6) | (buf[1] << 12) | (buf[0] << 18);
+	} else {
+		Error(srcIndex, "invalid byte in character literal");
+	}
 }
 
 static token
@@ -294,13 +345,11 @@ NextLiteralToken(void)
 		return tok;
 	case '"':
 		tok.type = TOK_STR;
-		tok.val.s = ReadString('"');
+		tok.val.s = ReadString();
 		return tok;
 	case '\'':
 		tok.type = TOK_CHAR;
-		tok.val.s = ReadString('\'');
-		if (!tok.val.s.len)
-			Error(tok.pos, "empty character string found");
+		tok.val.i = GetCodePoint();
 		return tok;
 	}
 
