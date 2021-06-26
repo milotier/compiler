@@ -1,0 +1,15 @@
+10 20 30
+foo
+bar
+baz
+boop
+"string " " more string"
+foob bar
+1308.423
+
+"foo\xf"
+
+main :: () {
+    foo := 10
+    bar := 3
+}
