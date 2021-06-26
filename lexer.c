@@ -200,7 +200,7 @@ NextLiteralToken(void)
 	token tok;
 
 	/* TODO: make this... thing cleaner */
-	while (isspace(c) || c == '/') {
+	while (c == '\n' || c == ' ' || c == '\t' || c == '/') {
 		if (c == '/') {
 			c = GetChar();
 			if (c == '*') {
