@@ -199,8 +199,35 @@ NextLiteralToken(void)
 	int c = GetChar();
 	token tok;
 
-	while (c == ' ' || c == '\n' || c == '\t')
+	/* TODO: make this... thing cleaner */
+	while (isspace(c) || c == '/') {
+		if (c == '/') {
+			c = GetChar();
+			if (c == '*') {
+				unsigned int nesting = 1;
+				c = GetChar();
+				for (;;) {
+					c = GetChar();
+					if (c == '*') {
+						c = GetChar();
+						if (c == '/') {
+							nesting--;
+							if (!nesting)
+								break;
+						}
+					} else if (c == '/') {
+						c = GetChar();
+						if (c == '*')
+							nesting++;
+					}
+				}
+			} else if (c == '/') {
+				while (c != '\n')
+					c = GetChar();
+			}
+		}
 		c = GetChar();
+	}
 	tok.pos = srcIndex;
 
 	switch (c) {
