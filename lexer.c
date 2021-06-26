@@ -6,6 +6,8 @@
 #include "common.h"
 #include "lexer.h"
 
+/* TODO: think about allowing unicode in identifiers? */
+
 /* variables */
 static array_type(token) cachedTokens;
 unsigned int srcIndex;
@@ -14,9 +16,15 @@ unsigned int srcIndex;
 static int
 GetChar(void)
 {
+	int c;
 	if (srcIndex == srcSize)
 		return EOF;
-	return srcCode[srcIndex++];
+
+	c = srcCode[srcIndex];
+	if (c <= 32 && c != '\n' && c != '\r' && c != ' ' && c != '\t')
+		Error(srcIndex, "found illegal character 0x%hhx", (char)c);
+	srcIndex++;
+	return c;
 }
 
 static void
@@ -200,7 +208,7 @@ NextLiteralToken(void)
 	token tok;
 
 	/* TODO: make this... thing cleaner */
-	while (c == '\n' || c == ' ' || c == '\t' || c == '/') {
+	while (c == '\n' || c == '\r' || c == ' ' || c == '\t' || c == '/') {
 		if (c == '/') {
 			c = GetChar();
 			if (c == '*') {
@@ -314,6 +322,14 @@ NextLiteralToken(void)
 		tok.val.s = AddSymbol(buf.data, buf.len);
 		StringFree(&buf);
 		return tok;
+	}
+
+	if (c != '.' && c != ':' && c != ';' && c != ',' && c != '(' && c != ')'
+	 && c != '[' && c != ']' && c != '{' && c != '}') {
+		if (isprint(c))
+			Error(tok.pos, "found illegal character '%c'", c);
+		else
+			Error(tok.pos, "found illegal character 0x%hhx", c);
 	}
 
 	/* It it got here, it is a single-character punctuation token */
