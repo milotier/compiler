@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "common.h"
 
@@ -46,23 +47,35 @@ Die(char *fmt, ...)
 	exit(1);
 }
 
-static unsigned int
-PosToLine(unsigned int pos)
+static void
+PosToCoords(unsigned int pos, unsigned int *line, unsigned int *col)
 {
-	unsigned int i, line = 1;
+	unsigned int i;
+	*line = 1;
+	*col = 0;
 	for (i = 0; i < pos; i++) {
-		if (srcCode[i] == '\n')
-			line++;
+		if (srcCode[i] == '\n') {
+			++*line;
+			*col = 0;
+		} else {
+			++*col;
+		}
 	}
-	return line;
 }
 
 void
 Error(unsigned int pos, char *fmt, ...)
 {
 	va_list args;
+	unsigned int line, col;
 
-	fprintf(stderr, "%s:%d: Error: ", srcPath, PosToLine(pos));
+	PosToCoords(pos, &line, &col);
+	if (isatty(STDOUT_FILENO))
+		fprintf(stderr, "%s:%u:%u: \x1b[1;91merror\x1b[m: ",
+			srcPath, line, col);
+	else
+		fprintf(stderr, "%s:%u:%u: error: ",
+			srcPath, line, col);
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);
@@ -74,8 +87,15 @@ void
 Warn(unsigned int pos, char *fmt, ...)
 {
 	va_list args;
+	unsigned int line, col;
 
-	fprintf(stderr, "%s:%d: warning: ", srcPath, PosToLine(pos));
+	PosToCoords(pos, &line, &col);
+	if (isatty(STDOUT_FILENO))
+		fprintf(stderr, "%s:%u:%u: \x1b[1;95mwarning\x1b[m: ",
+			srcPath, line, col);
+	else
+		fprintf(stderr, "%s:%u:%u: warning: ",
+			srcPath, line, col);
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);
