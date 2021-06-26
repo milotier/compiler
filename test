@@ -7,8 +7,6 @@ boop
 foob bar
 1308.423
 
-"foo\xf"
-
 main :: () {
     foo := 10
     bar := 3
