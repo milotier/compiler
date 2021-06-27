@@ -3,6 +3,20 @@
 #define PARSER_H
 
 /* types */
+
+enum {
+	TYPE_INFERRED,
+	TYPE_VOID,
+	TYPE_ANY_INT,
+	TYPE_INT,
+	TYPE_UINT,
+	TYPE_FLOAT,
+	TYPE_CHAR,
+};
+typedef struct {
+	unsigned char kind, width;
+} data_type;
+
 enum {
 	EXPR_INT,
 	EXPR_FLOAT,
@@ -11,14 +25,35 @@ enum {
 	EXPR_STR,
 	EXPR_IDENT,
 	EXPR_MEMBER,
-	EXPR_FUNC,
+	EXPR_CALL,
 	EXPR_UNOP,
 	EXPR_BINOP,
+	EXPR_FUNC,
 };
 typedef struct {
 	unsigned int pos;
 	unsigned short type, isParenthesized;
 } expr_header;
+
+enum {
+	STMT_EXPR,
+	STMT_RETURN,
+	STMT_BREAK,
+	STMT_CONTINUE,
+	STMT_IF,
+	STMT_WHILE,
+	STMT_BLOCK,
+	STMT_DECL,
+};
+typedef struct {
+	unsigned int pos, type;
+} stmt_header;
+
+typedef struct {
+	symbol name;
+	expr_header *value;
+	data_type type;
+} declaration;
 
 typedef struct {
 	expr_header header;
@@ -34,7 +69,6 @@ typedef struct {
 	expr_header header;
 	double value;
 } float_expr;
-
 typedef struct {
 	expr_header header;
 	unsigned long long value;
@@ -55,6 +89,13 @@ typedef struct {
 	expr_header header;
 	expr_header *func;
 	array_type(expr_header *) args;
+} call_expr;
+
+typedef struct {
+	expr_header header;
+	array_type(declaration) params;
+	array_type(stmt_header *) statements;
+	data_type returnType;
 } func_expr;
 
 enum {
@@ -111,32 +152,6 @@ typedef struct {
 	unsigned int type;
 } binop_expr;
 
-enum {
-	TYPE_INFERRED,
-	TYPE_ANY_INT,
-	TYPE_INT,
-	TYPE_UINT,
-	TYPE_FLOAT,
-	TYPE_CHAR,
-};
-typedef struct {
-	unsigned char kind, width;
-} data_type;
-
-enum {
-	STMT_EXPR,
-	STMT_RETURN,
-	STMT_BREAK,
-	STMT_CONTINUE,
-	STMT_IF,
-	STMT_WHILE,
-	STMT_BLOCK,
-	STMT_DECL,
-};
-typedef struct {
-	unsigned int pos, type;
-} stmt_header;
-
 typedef struct {
 	stmt_header header;
 	expr_header *expr;
@@ -161,9 +176,7 @@ typedef struct {
 
 typedef struct {
 	stmt_header header;
-	symbol name;
-	expr_header *value;
-	data_type type;
+	declaration decl;
 } decl_stmt;
 
 /* function declarations */
@@ -172,5 +185,6 @@ expr_header *ParseExpr(context *ctx);
 stmt_header *ParseStmt(context *ctx);
 /* Only used for debugging */
 void PrintExpr(expr_header *expr);
+void PrintStmt(stmt_header *expr);
 
 #endif /* PARSER_H */

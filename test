@@ -1,21 +1,19 @@
-{
+func := (foo: u32, bar: char) {
+    if foo {
+        foo(
+            bar + 10,
+            &baz ^,
+            boop,
+        );
+    } else
+        bar;
 
-if foo {
-    foo(
-        bar + 10,
-        &baz ^,
-        boop,
-    );
-} else
-    bar;
+    while x < 10  {
+        x += 1;
+        break;
+        continue;
+        return x;
+    }
 
-while x < 10  {
-    x += 1;
-    break;
-    continue;
-    return x;
-}
-
-foo : u32 = bar + baz;
-
+    foo : u32 = bar + baz;
 }

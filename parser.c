@@ -25,10 +25,11 @@ EXPR_ALLOC_FUNC(bool, Bool, BOOL);
 EXPR_ALLOC_FUNC(char, Char, CHAR);
 EXPR_ALLOC_FUNC(str, Str, STR);
 EXPR_ALLOC_FUNC(member, Member, MEMBER);
-EXPR_ALLOC_FUNC(func, Func, FUNC);
+EXPR_ALLOC_FUNC(call, Call, CALL);
 EXPR_ALLOC_FUNC(ident, Ident, IDENT);
 EXPR_ALLOC_FUNC(unop, Unop, UNOP);
 EXPR_ALLOC_FUNC(binop, Binop, BINOP);
+EXPR_ALLOC_FUNC(func, Func, FUNC);
 
 #define STMT_ALLOC_FUNC(lower, upper, fullUpper) \
 static lower##_stmt * \
@@ -85,14 +86,68 @@ ParseSingularExpr(context *ctx)
 	token tok = NextToken(ctx);
 	switch (tok.type) {
 	case '(': {
-		expr_header *expr = ParseExpr(ctx);
-		token next = NextToken(ctx);
-		if (next.type != ')')
-			Error(ctx, next.pos, "expected closing parenthesis");
-		if (expr->isParenthesized)
-			Warn(ctx, tok.pos, "useless parentheses");
-		expr->isParenthesized = 1;
-		return expr;
+		if ((PeekToken(1, ctx).type == TOK_IDENT &&
+		     PeekToken(2, ctx).type == ':') ||
+		    PeekToken(1, ctx).type == ')') {
+			func_expr *func = AllocFuncExpr();
+			func->header.pos = tok.pos;
+
+			while (tok.type != ')') {
+				declaration decl = {0};
+				tok = NextToken(ctx);
+				if (tok.type != TOK_IDENT)
+					Error(ctx, tok.pos,
+					      "expected parameter name");
+				decl.name = tok.val.s;
+				tok = NextToken(ctx);
+				if (tok.type != ':')
+					Error(ctx, tok.pos,
+					      "expected colon");
+				decl.type = ParseType(ctx);
+				ArrayAdd(&func->params, decl);
+
+				tok = NextToken(ctx);
+				if (tok.type == ',' &&
+				    PeekToken(1, ctx).type == ')') {
+					NextToken(ctx);
+					break;
+				}
+				if (tok.type != ',' && tok.type != ')')
+					Error(ctx, tok.pos,
+					      "expected comma or closing parenthesis");
+			}
+
+			tok = PeekToken(1, ctx);
+			if (tok.type == '{') {
+				NextToken(ctx);
+				func->returnType.kind = TYPE_VOID;
+			} else {
+				func->returnType = ParseType(ctx);
+				tok = NextToken(ctx);
+				if (tok.type != '{')
+					Error(ctx, tok.pos,
+					      "expected opening brace");
+			}
+
+			while (PeekToken(1, ctx).type != '}') {
+				stmt_header *stmt = ParseStmt(ctx);
+				if (stmt)
+					ArrayAdd(&func->statements, stmt);
+			}
+			NextToken(ctx);
+
+			return (expr_header *)func;
+		} else {
+			expr_header *expr = ParseExpr(ctx);
+			token next = NextToken(ctx);
+			if (next.type != ')')
+				Error(ctx, next.pos,
+				      "expected closing parenthesis");
+			if (expr->isParenthesized)
+				Warn(ctx, tok.pos, "useless parentheses");
+			expr->isParenthesized = 1;
+			return expr;
+		}
 	} break;
 	HANDLE_TOKEN(TOK_INT, int_expr, AllocIntExpr, tok.val.i)
 	HANDLE_TOKEN(TOK_FLOAT, float_expr, AllocFloatExpr, tok.val.f)
@@ -149,11 +204,11 @@ ParsePostfixExpr(context *ctx)
 				Error(ctx, tok.pos, "expected closing bracket");
 		} else {
 			NextToken(ctx);
-			expr = (expr_header *)AllocFuncExpr();
+			expr = (expr_header *)AllocCallExpr();
 			expr->pos = child->pos;
-			((func_expr *)expr)->func = child;
+			((call_expr *)expr)->func = child;
 			while (tok.type != ')') {
-				ArrayAdd(&((func_expr *)expr)->args, ParseExpr(ctx));
+				ArrayAdd(&((call_expr *)expr)->args, ParseExpr(ctx));
 				tok = NextToken(ctx);
 				if (tok.type == ',' && PeekToken(1, ctx).type == ')') {
 					NextToken(ctx);
@@ -382,32 +437,50 @@ ParseStmt(context *ctx)
 		}
 		NextToken(ctx);
 	} else if (tok.type == TOK_IDENT && PeekToken(2, ctx).type == ':') {
+		decl_stmt *declStmt;
 		stmt = (stmt_header *)AllocDeclStmt();
-		((decl_stmt *)stmt)->name = tok.val.s;
-		NextToken(ctx);
+		declStmt = (decl_stmt *)stmt;
+		tok = NextToken(ctx);
+		declStmt->decl.name = tok.val.s;
 		tok = NextToken(ctx);
 		stmt->pos = tok.pos;
 
 		tok = PeekToken(1, ctx);
 		if (tok.type != '=')
-			((decl_stmt *)stmt)->type = ParseType(ctx);
+			declStmt->decl.type = ParseType(ctx);
 		tok = NextToken(ctx);
 		if (tok.type == '=')
-			((decl_stmt *)stmt)->value = ParseExpr(ctx);
+			declStmt->decl.value = ParseExpr(ctx);
 
-		tok = NextToken(ctx);
-		if (tok.type != ';')
-			Error(ctx, tok.pos, "expected semicolon to end declaration");
+		if (!(declStmt->decl.value &&
+		      declStmt->decl.value->type == EXPR_FUNC)) {
+			tok = NextToken(ctx);
+			if (tok.type != ';')
+				Error(ctx, tok.pos,
+				      "expected semicolon to end declaration");
+		}
 	} else {
 		stmt = (stmt_header *)AllocExprStmt();
 		((expr_stmt *)stmt)->expr = ParseExpr(ctx);
 		stmt->pos = ((expr_stmt *)stmt)->expr->pos;
 		tok = NextToken(ctx);
 		if (tok.type != ';')
-			Error(ctx, tok.pos, "expected semicolon to end expression statement");
+			Error(ctx, tok.pos,
+			      "expected semicolon to end expression statement");
 	}
 
 	return stmt;
+}
+
+static void
+PrintType(data_type type)
+{
+	switch (type.kind) {
+	case TYPE_UINT: printf("u%hhu", type.width); break;
+	case TYPE_INT: printf("i%hhu", type.width); break;
+	case TYPE_FLOAT: printf("f%hhu", type.width); break;
+	case TYPE_CHAR: printf("char"); break;
+	}
 }
 
 void
@@ -426,15 +499,15 @@ PrintExpr(expr_header *expr)
 		PrintExpr(member->child);
 		printf(").%s", member->member.str);
 	} break;
-	case EXPR_FUNC: {
-		func_expr *func = (func_expr *)expr;
+	case EXPR_CALL: {
+		call_expr *call = (call_expr *)expr;
 		unsigned int i;
 		printf("(");
-		PrintExpr(func->func);
+		PrintExpr(call->func);
 		printf(")(");
-		for (i = 0; i < func->args.len; i++) {
-			PrintExpr(func->args.data[i]);
-			if (i != func->args.len - 1)
+		for (i = 0; i < call->args.len; i++) {
+			PrintExpr(call->args.data[i]);
+			if (i != call->args.len - 1)
 				printf(", ");
 		}
 		printf(")");
@@ -504,17 +577,28 @@ PrintExpr(expr_header *expr)
 		PrintExpr(binop->right);
 		printf(")");
 	} break;
-	}
-}
-
-static void
-PrintType(data_type type)
-{
-	switch (type.kind) {
-	case TYPE_UINT: printf("u%hhu", type.width); break;
-	case TYPE_INT: printf("i%hhu", type.width); break;
-	case TYPE_FLOAT: printf("f%hhu", type.width); break;
-	case TYPE_CHAR: printf("char"); break;
+	case EXPR_FUNC: {
+		func_expr *func = (func_expr *)expr;
+		unsigned int i;
+		printf("(");
+		for (i = 0; i < func->params.len; i++) {
+			printf("%s: ", func->params.data[i].name.str);
+			PrintType(func->params.data[i].type);
+			if (i != func->params.len - 1)
+				printf(", ");
+		}
+		printf(") ");
+		if (func->returnType.kind != TYPE_VOID) {
+			PrintType(func->returnType);
+			printf(" ");
+		}
+		printf("{ ");
+		for (i = 0; i < func->statements.len; i++) {
+			PrintStmt(func->statements.data[i]);
+			printf(" ");
+		}
+		printf("}");
+	} break;
 	}
 }
 
@@ -572,15 +656,15 @@ PrintStmt(stmt_header *stmt)
 		} break;
 		case STMT_DECL: {
 			decl_stmt *declStmt = (decl_stmt *)stmt;
-			printf("%s :", declStmt->name.str);
-			if (declStmt->type.kind != TYPE_INFERRED) {
+			printf("%s :", declStmt->decl.name.str);
+			if (declStmt->decl.type.kind != TYPE_INFERRED) {
 				printf(" ");
-				PrintType(declStmt->type);
+				PrintType(declStmt->decl.type);
 				printf(" ");
 			}
-			if (declStmt->value) {
+			if (declStmt->decl.value) {
 				printf("= ");
-				PrintExpr(declStmt->value);
+				PrintExpr(declStmt->decl.value);
 			}
 			printf(";");
 		} break;
