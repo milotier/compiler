@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "common.h"
 #include "lexer.h"
@@ -318,4 +319,279 @@ TableFree(table *tbl, void (*freeFunc)(void *))
 	TableClear(tbl, freeFunc);
 	tbl->entries = NULL;
 	tbl->cap = 0;
+}
+
+void
+ScopeAdd(scope *s, declaration *decl)
+{
+	if (!s->parent)
+		TableAdd(&s->value.tbl, decl->name, decl);
+	else
+		ArrayAdd(&s->value.arr, decl);
+}
+
+declaration *
+ScopeGetNoParent(scope *s, symbol sym)
+{
+	unsigned int i;
+	if (!s->parent)
+		return TableGet(&s->value.tbl, sym);
+	for (i = 0; i < s->value.arr.len; i++) {
+		if (s->value.arr.data[i]->name.str == sym.str)
+			return s->value.arr.data[i];
+	}
+	return NULL;
+}
+
+declaration *
+ScopeGet(scope *s, symbol sym)
+{
+	while (s) {
+		declaration *decl = ScopeGetNoParent(s, sym);
+		if (decl)
+			return decl;
+		s = s->parent;
+	}
+	return NULL;
+}
+
+void
+PrintToken(token tok)
+{
+	switch (tok.type) {
+	case TOK_EOF: printf("EOF"); break;
+	case TOK_IDENT: printf("%s", tok.val.s.str); break;
+	case TOK_STR: printf("\"%s\"", tok.val.s.str); break;
+	case TOK_CHAR: printf("'%lc'", (wint_t)tok.val.i); break;
+	case TOK_INT: printf("%llu", tok.val.i); break;
+	case TOK_FLOAT: printf("%f", tok.val.f); break;
+	case TOK_BOOL: printf("%s", tok.val.i ? "true" : "false"); break;
+	case TOK_ARROW: printf("->"); break;
+	case TOK_LSHIFT: printf("<<"); break;
+	case TOK_RSHIFT: printf(">>"); break;
+	case TOK_AND: printf("&&"); break;
+	case TOK_OR: printf("||"); break;
+	case TOK_EQ: printf("=="); break;
+	case TOK_NEQ: printf("!="); break;
+	case TOK_GTE: printf(">="); break;
+	case TOK_LTE: printf("<="); break;
+	case TOK_ADD_ASS: printf("+="); break;
+	case TOK_SUB_ASS: printf("-="); break;
+	case TOK_MUL_ASS: printf("*="); break;
+	case TOK_DIV_ASS: printf("/="); break;
+	case TOK_MOD_ASS: printf("*="); break;
+	case TOK_BITAND_ASS: printf("&="); break;
+	case TOK_BITOR_ASS: printf("|="); break;
+	case TOK_BITXOR_ASS: printf("^="); break;
+	case TOK_LSHIFT_ASS: printf("<<="); break;
+	case TOK_RSHIFT_ASS: printf(">>="); break;
+	default: putchar(tok.type);
+	}
+}
+
+void
+PrintType(data_type type)
+{
+	switch (type.kind) {
+	case TYPE_UINT: printf("u%hhu", type.width); break;
+	case TYPE_INT: printf("i%hhu", type.width); break;
+	case TYPE_FLOAT: printf("f%hhu", type.width); break;
+	case TYPE_CHAR: printf("char"); break;
+	}
+}
+
+void
+PrintExpr(expr_header *expr)
+{
+	switch (expr->type) {
+	case EXPR_INT: printf("%llu", ((int_expr *)expr)->value); break;
+	case EXPR_FLOAT: printf("%f", ((float_expr *)expr)->value); break;
+	case EXPR_BOOL: printf("%s", ((bool_expr *)expr)->value ? "true" : "false"); break;
+	case EXPR_CHAR: printf("'%lc'", (wint_t)((char_expr *)expr)->value); break;
+	case EXPR_STR: printf("\"%s\"", ((str_expr *)expr)->value.str); break;
+	case EXPR_IDENT: printf("%s", ((ident_expr *)expr)->value.str); break;
+	case EXPR_MEMBER: {
+		member_expr *member = (member_expr *)expr;
+		printf("(");
+		PrintExpr(member->child);
+		printf(").%s", member->member.str);
+	} break;
+	case EXPR_CALL: {
+		call_expr *call = (call_expr *)expr;
+		unsigned int i;
+		printf("(");
+		PrintExpr(call->func);
+		printf(")(");
+		for (i = 0; i < call->args.len; i++) {
+			PrintExpr(call->args.data[i]);
+			if (i != call->args.len - 1)
+				printf(", ");
+		}
+		printf(")");
+	} break;
+	case EXPR_UNOP: {
+		unop_expr *unop = (unop_expr *)expr;
+		if (unop->type == UNOP_NOT) {
+			printf("!(");
+			PrintExpr(unop->child);
+			printf(")");
+		} else if (unop->type == UNOP_ADDR_OF) {
+			printf("&(");
+			PrintExpr(unop->child);
+			printf(")");
+		} else if (unop->type == UNOP_DEREF) {
+			printf("(");
+			PrintExpr(unop->child);
+			printf(")^");
+		}
+	} break;
+	case EXPR_BINOP: {
+		binop_expr *binop = (binop_expr *)expr;
+		char *operator;
+		if (binop->type == BINOP_INDEX) {
+			printf("(");
+			PrintExpr(binop->left);
+			printf(")");
+			printf("[");
+			PrintExpr(binop->right);
+			printf("]");
+			break;
+		}
+		switch (binop->type) {
+		case BINOP_ADD: operator = "+"; break;
+		case BINOP_SUB: operator = "-"; break;
+		case BINOP_MUL: operator = "*"; break;
+		case BINOP_DIV: operator = "/"; break;
+		case BINOP_MOD: operator = "%"; break;
+		case BINOP_LSHIFT: operator = "<<"; break;
+		case BINOP_RSHIFT: operator = ">>"; break;
+		case BINOP_BITAND: operator = "&"; break;
+		case BINOP_BITOR: operator = "|"; break;
+		case BINOP_BITXOR: operator = "^"; break;
+		case BINOP_ADD_ASS: operator = "+="; break;
+		case BINOP_SUB_ASS: operator = "-="; break;
+		case BINOP_MUL_ASS: operator = "*="; break;
+		case BINOP_DIV_ASS: operator = "/="; break;
+		case BINOP_MOD_ASS: operator = "%="; break;
+		case BINOP_LSHIFT_ASS: operator = "<<="; break;
+		case BINOP_RSHIFT_ASS: operator = ">>="; break;
+		case BINOP_BITAND_ASS: operator = "&="; break;
+		case BINOP_BITOR_ASS: operator = "|="; break;
+		case BINOP_BITXOR_ASS: operator = "^="; break;
+		case BINOP_ASSIGN: operator = "="; break;
+		case BINOP_AND: operator = "&&"; break;
+		case BINOP_OR: operator = "||"; break;
+		case BINOP_EQ: operator = "=="; break;
+		case BINOP_NEQ: operator = "!="; break;
+		case BINOP_LT: operator = "<"; break;
+		case BINOP_LTE: operator = "<="; break;
+		case BINOP_GT: operator = ">"; break;
+		case BINOP_GTE: operator = ">="; break;
+		}
+		printf("(");
+		PrintExpr(binop->left);
+		printf(") %s (", operator);
+		PrintExpr(binop->right);
+		printf(")");
+	} break;
+	case EXPR_FUNC: {
+		func_expr *func = (func_expr *)expr;
+		unsigned int i;
+		printf("(");
+		for (i = 0; i < func->params.len; i++) {
+			printf("%s: ", func->params.data[i].name.str);
+			PrintType(func->params.data[i].type);
+			if (i != func->params.len - 1)
+				printf(", ");
+		}
+		printf(") ");
+		if (func->returnType.kind != TYPE_VOID) {
+			PrintType(func->returnType);
+			printf(" ");
+		}
+		printf("{ ");
+		for (i = 0; i < func->statements.len; i++) {
+			PrintStmt(func->statements.data[i]);
+			printf(" ");
+		}
+		printf("}");
+	} break;
+	}
+}
+
+void
+PrintDecl(declaration *decl)
+{
+	printf("%s :", decl->name.str);
+	if (decl->type.kind != TYPE_INFERRED) {
+		printf(" ");
+		PrintType(decl->type);
+		printf(" ");
+	}
+	if (decl->value) {
+		if (decl->isConst)
+			printf(": ");
+		else
+			printf("= ");
+		PrintExpr(decl->value);
+	}
+	printf(";");
+}
+
+void
+PrintStmt(stmt_header *stmt)
+{
+	if (!stmt) {
+		printf(";");
+		return;
+	}
+
+	switch (stmt->type) {
+	case STMT_EXPR:
+		PrintExpr(((expr_stmt *)stmt)->expr);
+		printf(";");
+		break;
+	case STMT_RETURN:
+		printf("return ");
+		PrintExpr(((return_stmt *)stmt)->expr);
+		printf(";");
+		break;
+	case STMT_BREAK:
+		printf("break;");
+		break;
+	case STMT_CONTINUE:
+		printf("continue;");
+		break;
+	case STMT_IF: {
+		if_stmt *ifStmt = (if_stmt *)stmt;
+		printf("if ");
+		PrintExpr(ifStmt->condition);
+		printf(" ");
+		PrintStmt(ifStmt->if_branch);
+		if (ifStmt->else_branch) {
+			printf(" else ");
+			PrintStmt(ifStmt->else_branch);
+		}
+	} break;
+	case STMT_WHILE: {
+		while_stmt *whileStmt = (while_stmt *)stmt;
+		printf("while ");
+		PrintExpr(whileStmt->condition);
+		printf(" ");
+		PrintStmt(whileStmt->statement);
+	} break;
+	case STMT_BLOCK: {
+		block_stmt *blockStmt = (block_stmt *)stmt;
+		unsigned int i;
+		printf("{ ");
+		for (i = 0; i < blockStmt->statements.len; i++) {
+			PrintStmt(blockStmt->statements.data[i]);
+			printf(" ");
+		}
+		printf("}");
+	} break;
+	case STMT_DECL:
+		PrintDecl(&((decl_stmt *)stmt)->decl);
+		break;
+	}
 }

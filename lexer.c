@@ -29,40 +29,6 @@ UngetChar(context *ctx)
 	ctx->srcIndex--;
 }
 
-void
-PrintToken(token tok)
-{
-	switch (tok.type) {
-	case TOK_EOF: printf("EOF"); break;
-	case TOK_IDENT: printf("%s", tok.val.s.str); break;
-	case TOK_STR: printf("\"%s\"", tok.val.s.str); break;
-	case TOK_CHAR: printf("'%lc'", (wchar_t)tok.val.i); break;
-	case TOK_INT: printf("%llu", tok.val.i); break;
-	case TOK_FLOAT: printf("%f", tok.val.f); break;
-	case TOK_BOOL: printf("%s", tok.val.i ? "true" : "false"); break;
-	case TOK_ARROW: printf("->"); break;
-	case TOK_LSHIFT: printf("<<"); break;
-	case TOK_RSHIFT: printf(">>"); break;
-	case TOK_AND: printf("&&"); break;
-	case TOK_OR: printf("||"); break;
-	case TOK_EQ: printf("=="); break;
-	case TOK_NEQ: printf("!="); break;
-	case TOK_GTE: printf(">="); break;
-	case TOK_LTE: printf("<="); break;
-	case TOK_ADD_ASS: printf("+="); break;
-	case TOK_SUB_ASS: printf("-="); break;
-	case TOK_MUL_ASS: printf("*="); break;
-	case TOK_DIV_ASS: printf("/="); break;
-	case TOK_MOD_ASS: printf("*="); break;
-	case TOK_BITAND_ASS: printf("&="); break;
-	case TOK_BITOR_ASS: printf("|="); break;
-	case TOK_BITXOR_ASS: printf("^="); break;
-	case TOK_LSHIFT_ASS: printf("<<="); break;
-	case TOK_RSHIFT_ASS: printf(">>="); break;
-	default: putchar(tok.type);
-	}
-}
-
 static char
 CheckForAssign(char type, char assignType, context *ctx)
 {

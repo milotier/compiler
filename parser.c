@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wchar.h>
 
 #include "common.h"
 #include "lexer.h"
 #include "parser.h"
+
+static expr_header *ParseExpr(context *, scope *);
+static stmt_header *ParseStmt(context *, scope *);
 
 /* function implementations */
 #define EXPR_ALLOC_FUNC(lower, upper, fullUpper) \
@@ -72,6 +74,38 @@ ParseType(context *ctx)
 	return type;
 }
 
+static declaration
+ParseDecl(context *ctx, scope *s)
+{
+	declaration decl = {0};
+	token tok = NextToken(ctx);
+	if (tok.type != TOK_IDENT)
+		Error(ctx, tok.pos, "expected identifier in declaration");
+	decl.name = tok.val.s;
+	tok = NextToken(ctx);
+	if (tok.type != ':')
+		Error(ctx, tok.pos, "expected colon in declaration");
+	decl.pos = tok.pos;
+
+	tok = PeekToken(1, ctx);
+	if (tok.type != '=' && tok.type != ':')
+		decl.type = ParseType(ctx);
+	tok = NextToken(ctx);
+	if (tok.type == '=' || tok.type == ':') {
+		if (tok.type == ':')
+			decl.isConst = 1;
+		decl.value = ParseExpr(ctx, s);
+	}
+
+	if (!(decl.value && decl.value->type == EXPR_FUNC)) {
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end declaration");
+	}
+
+	return decl;
+}
+
 #define HANDLE_TOKEN(tokType, expr_type, Func, val) \
 	case tokType: { \
 		expr_type *expr = Func(); \
@@ -81,7 +115,7 @@ ParseType(context *ctx)
 	} break;
 
 static expr_header *
-ParseSingularExpr(context *ctx)
+ParseSingularExpr(context *ctx, scope *s)
 {
 	token tok = NextToken(ctx);
 	switch (tok.type) {
@@ -91,6 +125,7 @@ ParseSingularExpr(context *ctx)
 		    PeekToken(1, ctx).type == ')') {
 			func_expr *func = AllocFuncExpr();
 			func->header.pos = tok.pos;
+			func->funcScope.parent = s;
 
 			while (tok.type != ')') {
 				declaration decl = {0};
@@ -102,9 +137,13 @@ ParseSingularExpr(context *ctx)
 				tok = NextToken(ctx);
 				if (tok.type != ':')
 					Error(ctx, tok.pos,
-					      "expected colon");
+					      "expected colon in parameter declaration");
+				decl.pos = tok.pos;
 				decl.type = ParseType(ctx);
+
 				ArrayAdd(&func->params, decl);
+				ScopeAdd(&func->funcScope,
+					 &func->params.data[func->params.len - 1]);
 
 				tok = NextToken(ctx);
 				if (tok.type == ',' &&
@@ -130,7 +169,7 @@ ParseSingularExpr(context *ctx)
 			}
 
 			while (PeekToken(1, ctx).type != '}') {
-				stmt_header *stmt = ParseStmt(ctx);
+				stmt_header *stmt = ParseStmt(ctx, &func->funcScope);
 				if (stmt)
 					ArrayAdd(&func->statements, stmt);
 			}
@@ -138,7 +177,7 @@ ParseSingularExpr(context *ctx)
 
 			return (expr_header *)func;
 		} else {
-			expr_header *expr = ParseExpr(ctx);
+			expr_header *expr = ParseExpr(ctx, s);
 			token next = NextToken(ctx);
 			if (next.type != ')')
 				Error(ctx, next.pos,
@@ -161,9 +200,9 @@ ParseSingularExpr(context *ctx)
 }
 
 static expr_header *
-ParsePostfixExpr(context *ctx)
+ParsePostfixExpr(context *ctx, scope *s)
 {
-	expr_header *child = ParseSingularExpr(ctx);
+	expr_header *child = ParseSingularExpr(ctx, s);
 	expr_header *expr = child;
 	token tok = PeekToken(1, ctx);
 
@@ -198,7 +237,7 @@ ParsePostfixExpr(context *ctx)
 			expr->pos = tok.pos;
 			((binop_expr *)expr)->type = BINOP_INDEX;
 			((binop_expr *)expr)->left = child;
-			((binop_expr *)expr)->right = ParseExpr(ctx);
+			((binop_expr *)expr)->right = ParseExpr(ctx, s);
 			tok = NextToken(ctx);
 			if (tok.type != ']')
 				Error(ctx, tok.pos, "expected closing bracket");
@@ -208,7 +247,7 @@ ParsePostfixExpr(context *ctx)
 			expr->pos = child->pos;
 			((call_expr *)expr)->func = child;
 			while (tok.type != ')') {
-				ArrayAdd(&((call_expr *)expr)->args, ParseExpr(ctx));
+				ArrayAdd(&((call_expr *)expr)->args, ParseExpr(ctx, s));
 				tok = NextToken(ctx);
 				if (tok.type == ',' && PeekToken(1, ctx).type == ')') {
 					NextToken(ctx);
@@ -226,7 +265,7 @@ ParsePostfixExpr(context *ctx)
 }
 
 static expr_header *
-ParsePrefixExpr(context *ctx)
+ParsePrefixExpr(context *ctx, scope *s)
 {
 	token tok = PeekToken(1, ctx);
 
@@ -235,7 +274,7 @@ ParsePrefixExpr(context *ctx)
 		unop_expr *expr = AllocUnopExpr();
 		expr->header.pos = tok.pos;
 		expr->type = UNOP_ADDR_OF;
-		expr->child = ParsePrefixExpr(ctx);
+		expr->child = ParsePrefixExpr(ctx, s);
 		return (expr_header *)expr;
 	}
 	if (tok.type == '!') {
@@ -243,11 +282,11 @@ ParsePrefixExpr(context *ctx)
 		unop_expr *expr = AllocUnopExpr();
 		expr->header.pos = tok.pos;
 		expr->type = UNOP_NOT;
-		expr->child = ParsePrefixExpr(ctx);
+		expr->child = ParsePrefixExpr(ctx, s);
 		return (expr_header *)expr;
 	}
 
-	return ParsePostfixExpr(ctx);
+	return ParsePostfixExpr(ctx, s);
 }
 
 static unsigned int
@@ -294,10 +333,10 @@ BinopPrecedence(unsigned int type)
 	assert(0);
 }
 
-expr_header *
-ParseExpr(context *ctx)
+static expr_header *
+ParseExpr(context *ctx, scope *s)
 {
-	expr_header *expr = ParsePrefixExpr(ctx);
+	expr_header *expr = ParsePrefixExpr(ctx, s);
 	token tok = PeekToken(1, ctx);
 	int type = -1;
 
@@ -343,7 +382,7 @@ ParseExpr(context *ctx)
 		binop_expr *exprBinop;
 
 		NextToken(ctx);
-		right = ParseExpr(ctx);
+		right = ParseExpr(ctx, s);
 
 		expr = (expr_header *)AllocBinopExpr();
 		expr->pos = tok.pos;
@@ -374,8 +413,8 @@ ParseExpr(context *ctx)
 	return expr;
 }
 
-stmt_header *
-ParseStmt(context *ctx)
+static stmt_header *
+ParseStmt(context *ctx, scope *s)
 {
 	token tok = PeekToken(1, ctx);
 	stmt_header *stmt;
@@ -403,7 +442,7 @@ ParseStmt(context *ctx)
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocReturnStmt();
 		stmt->pos = tok.pos;
-		((return_stmt *)stmt)->expr = ParseExpr(ctx);
+		((return_stmt *)stmt)->expr = ParseExpr(ctx, s);
 		tok = NextToken(ctx);
 		if (tok.type != ';')
 			Error(ctx, tok.pos, "expected semicolon to end return statement");
@@ -411,26 +450,30 @@ ParseStmt(context *ctx)
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocIfStmt();
 		stmt->pos = tok.pos;
-		((if_stmt *)stmt)->condition = ParseExpr(ctx);
-		((if_stmt *)stmt)->if_branch = ParseStmt(ctx);
+		((if_stmt *)stmt)->condition = ParseExpr(ctx, s);
+		((if_stmt *)stmt)->if_branch = ParseStmt(ctx, s);
 
 		tok = PeekToken(1, ctx);
 		if (tok.type == TOK_ELSE) {
 			NextToken(ctx);
-			((if_stmt *)stmt)->else_branch = ParseStmt(ctx);
+			((if_stmt *)stmt)->else_branch = ParseStmt(ctx, s);
 		}
 	} else if (tok.type == TOK_WHILE) {
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocWhileStmt();
 		stmt->pos = tok.pos;
-		((while_stmt *)stmt)->condition = ParseExpr(ctx);
-		((while_stmt *)stmt)->statement = ParseStmt(ctx);
+		((while_stmt *)stmt)->condition = ParseExpr(ctx, s);
+		((while_stmt *)stmt)->statement = ParseStmt(ctx, s);
 	} else if (tok.type == '{') {
+		block_stmt *blockStmt;
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocBlockStmt();
+		blockStmt = (block_stmt *)stmt;
 		stmt->pos = tok.pos;
+		blockStmt->blockScope.parent = s;
 		while (PeekToken(1, ctx).type != '}') {
-			stmt_header *child_stmt = ParseStmt(ctx);
+			stmt_header *child_stmt = ParseStmt(ctx,
+							    &blockStmt->blockScope);
 			if (child_stmt)
 				ArrayAdd(&((block_stmt *)stmt)->statements,
 					 child_stmt);
@@ -440,31 +483,16 @@ ParseStmt(context *ctx)
 		decl_stmt *declStmt;
 		stmt = (stmt_header *)AllocDeclStmt();
 		declStmt = (decl_stmt *)stmt;
-		tok = NextToken(ctx);
-		declStmt->decl.name = tok.val.s;
-		tok = NextToken(ctx);
-		stmt->pos = tok.pos;
+		declStmt->decl = ParseDecl(ctx, s);
+		stmt->pos = declStmt->decl.pos;
 
-		tok = PeekToken(1, ctx);
-		if (tok.type != '=' && tok.type != ':')
-			declStmt->decl.type = ParseType(ctx);
-		tok = NextToken(ctx);
-		if (tok.type == '=' || tok.type == ':') {
-			if (tok.type == ':')
-				declStmt->decl.isConst = 1;
-			declStmt->decl.value = ParseExpr(ctx);
-		}
-
-		if (!(declStmt->decl.value &&
-		      declStmt->decl.value->type == EXPR_FUNC)) {
-			tok = NextToken(ctx);
-			if (tok.type != ';')
-				Error(ctx, tok.pos,
-				      "expected semicolon to end declaration");
-		}
+		if (ScopeGetNoParent(s, declStmt->decl.name))
+			Error(ctx, stmt->pos,
+			      "redeclaration of %s", declStmt->decl.name.str);
+		ScopeAdd(s, &declStmt->decl);
 	} else {
 		stmt = (stmt_header *)AllocExprStmt();
-		((expr_stmt *)stmt)->expr = ParseExpr(ctx);
+		((expr_stmt *)stmt)->expr = ParseExpr(ctx, s);
 		stmt->pos = ((expr_stmt *)stmt)->expr->pos;
 		tok = NextToken(ctx);
 		if (tok.type != ';')
@@ -475,204 +503,14 @@ ParseStmt(context *ctx)
 	return stmt;
 }
 
-static void
-PrintType(data_type type)
-{
-	switch (type.kind) {
-	case TYPE_UINT: printf("u%hhu", type.width); break;
-	case TYPE_INT: printf("i%hhu", type.width); break;
-	case TYPE_FLOAT: printf("f%hhu", type.width); break;
-	case TYPE_CHAR: printf("char"); break;
-	}
-}
-
 void
-PrintExpr(expr_header *expr)
+Parse(context *ctx)
 {
-	switch (expr->type) {
-	case EXPR_INT: printf("%llu", ((int_expr *)expr)->value); break;
-	case EXPR_FLOAT: printf("%f", ((float_expr *)expr)->value); break;
-	case EXPR_BOOL: printf("%s", ((bool_expr *)expr)->value ? "true" : "false"); break;
-	case EXPR_CHAR: printf("'%lc'", (wint_t)((char_expr *)expr)->value); break;
-	case EXPR_STR: printf("\"%s\"", ((str_expr *)expr)->value.str); break;
-	case EXPR_IDENT: printf("%s", ((ident_expr *)expr)->value.str); break;
-	case EXPR_MEMBER: {
-		member_expr *member = (member_expr *)expr;
-		printf("(");
-		PrintExpr(member->child);
-		printf(").%s", member->member.str);
-	} break;
-	case EXPR_CALL: {
-		call_expr *call = (call_expr *)expr;
-		unsigned int i;
-		printf("(");
-		PrintExpr(call->func);
-		printf(")(");
-		for (i = 0; i < call->args.len; i++) {
-			PrintExpr(call->args.data[i]);
-			if (i != call->args.len - 1)
-				printf(", ");
-		}
-		printf(")");
-	} break;
-	case EXPR_UNOP: {
-		unop_expr *unop = (unop_expr *)expr;
-		if (unop->type == UNOP_NOT) {
-			printf("!(");
-			PrintExpr(unop->child);
-			printf(")");
-		} else if (unop->type == UNOP_ADDR_OF) {
-			printf("&(");
-			PrintExpr(unop->child);
-			printf(")");
-		} else if (unop->type == UNOP_DEREF) {
-			printf("(");
-			PrintExpr(unop->child);
-			printf(")^");
-		}
-	} break;
-	case EXPR_BINOP: {
-		binop_expr *binop = (binop_expr *)expr;
-		char *operator;
-		if (binop->type == BINOP_INDEX) {
-			printf("(");
-			PrintExpr(binop->left);
-			printf(")");
-			printf("[");
-			PrintExpr(binop->right);
-			printf("]");
-			break;
-		}
-		switch (binop->type) {
-		case BINOP_ADD: operator = "+"; break;
-		case BINOP_SUB: operator = "-"; break;
-		case BINOP_MUL: operator = "*"; break;
-		case BINOP_DIV: operator = "/"; break;
-		case BINOP_MOD: operator = "%"; break;
-		case BINOP_LSHIFT: operator = "<<"; break;
-		case BINOP_RSHIFT: operator = ">>"; break;
-		case BINOP_BITAND: operator = "&"; break;
-		case BINOP_BITOR: operator = "|"; break;
-		case BINOP_BITXOR: operator = "^"; break;
-		case BINOP_ADD_ASS: operator = "+="; break;
-		case BINOP_SUB_ASS: operator = "-="; break;
-		case BINOP_MUL_ASS: operator = "*="; break;
-		case BINOP_DIV_ASS: operator = "/="; break;
-		case BINOP_MOD_ASS: operator = "%="; break;
-		case BINOP_LSHIFT_ASS: operator = "<<="; break;
-		case BINOP_RSHIFT_ASS: operator = ">>="; break;
-		case BINOP_BITAND_ASS: operator = "&="; break;
-		case BINOP_BITOR_ASS: operator = "|="; break;
-		case BINOP_BITXOR_ASS: operator = "^="; break;
-		case BINOP_ASSIGN: operator = "="; break;
-		case BINOP_AND: operator = "&&"; break;
-		case BINOP_OR: operator = "||"; break;
-		case BINOP_EQ: operator = "=="; break;
-		case BINOP_NEQ: operator = "!="; break;
-		case BINOP_LT: operator = "<"; break;
-		case BINOP_LTE: operator = "<="; break;
-		case BINOP_GT: operator = ">"; break;
-		case BINOP_GTE: operator = ">="; break;
-		}
-		printf("(");
-		PrintExpr(binop->left);
-		printf(") %s (", operator);
-		PrintExpr(binop->right);
-		printf(")");
-	} break;
-	case EXPR_FUNC: {
-		func_expr *func = (func_expr *)expr;
-		unsigned int i;
-		printf("(");
-		for (i = 0; i < func->params.len; i++) {
-			printf("%s: ", func->params.data[i].name.str);
-			PrintType(func->params.data[i].type);
-			if (i != func->params.len - 1)
-				printf(", ");
-		}
-		printf(") ");
-		if (func->returnType.kind != TYPE_VOID) {
-			PrintType(func->returnType);
-			printf(" ");
-		}
-		printf("{ ");
-		for (i = 0; i < func->statements.len; i++) {
-			PrintStmt(func->statements.data[i]);
-			printf(" ");
-		}
-		printf("}");
-	} break;
-	}
-}
-
-void
-PrintStmt(stmt_header *stmt)
-{
-	if (!stmt) {
-		printf(";");
-		return;
-	}
-
-	switch (stmt->type) {
-	case STMT_EXPR:
-		PrintExpr(((expr_stmt *)stmt)->expr);
-		printf(";");
-		break;
-	case STMT_RETURN:
-		printf("return ");
-		PrintExpr(((return_stmt *)stmt)->expr);
-		printf(";");
-		break;
-	case STMT_BREAK:
-		printf("break;");
-		break;
-	case STMT_CONTINUE:
-		printf("continue;");
-		break;
-	case STMT_IF: {
-		if_stmt *ifStmt = (if_stmt *)stmt;
-		printf("if ");
-		PrintExpr(ifStmt->condition);
-		printf(" ");
-		PrintStmt(ifStmt->if_branch);
-		if (ifStmt->else_branch) {
-			printf(" else ");
-			PrintStmt(ifStmt->else_branch);
-		}
-	} break;
-	case STMT_WHILE: {
-		while_stmt *whileStmt = (while_stmt *)stmt;
-		printf("while ");
-		PrintExpr(whileStmt->condition);
-		printf(" ");
-		PrintStmt(whileStmt->statement);
-	} break;
-	case STMT_BLOCK: {
-		block_stmt *blockStmt = (block_stmt *)stmt;
-		unsigned int i;
-		printf("{ ");
-		for (i = 0; i < blockStmt->statements.len; i++) {
-			PrintStmt(blockStmt->statements.data[i]);
-			printf(" ");
-		}
-		printf("}");
-	} break;
-	case STMT_DECL: {
-		decl_stmt *declStmt = (decl_stmt *)stmt;
-		printf("%s :", declStmt->decl.name.str);
-		if (declStmt->decl.type.kind != TYPE_INFERRED) {
-			printf(" ");
-			PrintType(declStmt->decl.type);
-			printf(" ");
-		}
-		if (declStmt->decl.value) {
-			if (declStmt->decl.isConst)
-				printf(": ");
-			else
-				printf("= ");
-			PrintExpr(declStmt->decl.value);
-		}
-		printf(";");
-	} break;
+	while (PeekToken(1, ctx).type != TOK_EOF) {
+		declaration *decl = xmalloc(sizeof(*decl));
+		*decl = ParseDecl(ctx, &ctx->topScope);
+		if (ScopeGetNoParent(&ctx->topScope, decl->name))
+			Error(ctx, decl->pos, "redeclaration of %s", decl->name.str);
+		ScopeAdd(&ctx->topScope, decl);
 	}
 }

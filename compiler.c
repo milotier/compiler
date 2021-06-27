@@ -1,5 +1,17 @@
-/*
- * vim: noexpandtab:softtabstop=8:shiftwidth=8
+/* Program file structure:
+ * - compiler.c: the file which contains main, it reads command-line arguments and
+ *   initializes the context.
+ * - common.h: the header file that declares useful macros and data structures,
+ *   like arrays and tables, and defines the AST and token structures. It also
+ *   defines the context struct, which contains the state that is used when
+ *   compiling a module. Finally, it defines functions for reporting errors and
+ *   warnings.
+ * - common.c: the implementation of data structures and functions defined in
+ *   common.h
+ * - lexer.h: the header file for the lexer.
+ * - lexer.c: the implementation file of the lexer.
+ * - parser.h: the header file for the parser.
+ * - parser.c: the implementation file of the parser.
  */
 #include <ctype.h>
 #include <fcntl.h>
@@ -14,9 +26,7 @@
 #include <unistd.h>
 
 #include "common.h"
-#include "lexer.h"
 #include "parser.h"
-
 
 /* function implementations */
 static void
@@ -72,5 +82,8 @@ main(int argc, char *argv[])
 		totalRead += (unsigned int)bytesRead;
 	}
 
-	PrintStmt(ParseStmt(&ctx));
+	Parse(&ctx);
+	for (i = 0; i < ctx.topScope.value.tbl.len; i++)
+		if (ctx.topScope.value.tbl.entries[i].sym.str)
+			PrintDecl((declaration *)ctx.topScope.value.tbl.entries[i].val);
 }

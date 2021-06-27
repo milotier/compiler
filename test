@@ -15,5 +15,5 @@ func :: (foo: u32, bar: char) {
         return x;
     }
 
-    foo : u32 = bar + baz;
+    var : u32 = bar + baz;
 }
