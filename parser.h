@@ -53,6 +53,7 @@ typedef struct {
 	symbol name;
 	expr_header *value;
 	data_type type;
+	unsigned char isConst;
 } declaration;
 
 typedef struct {

@@ -1,4 +1,4 @@
-func := (foo: u32, bar: char) {
+func :: (foo: u32, bar: char) {
     if foo {
         foo(
             bar + 10,

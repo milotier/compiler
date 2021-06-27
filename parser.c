@@ -446,11 +446,14 @@ ParseStmt(context *ctx)
 		stmt->pos = tok.pos;
 
 		tok = PeekToken(1, ctx);
-		if (tok.type != '=')
+		if (tok.type != '=' && tok.type != ':')
 			declStmt->decl.type = ParseType(ctx);
 		tok = NextToken(ctx);
-		if (tok.type == '=')
+		if (tok.type == '=' || tok.type == ':') {
+			if (tok.type == ':')
+				declStmt->decl.isConst = 1;
 			declStmt->decl.value = ParseExpr(ctx);
+		}
 
 		if (!(declStmt->decl.value &&
 		      declStmt->decl.value->type == EXPR_FUNC)) {
@@ -611,62 +614,65 @@ PrintStmt(stmt_header *stmt)
 	}
 
 	switch (stmt->type) {
-		case STMT_EXPR:
-			PrintExpr(((expr_stmt *)stmt)->expr);
-			printf(";");
-			break;
-		case STMT_RETURN:
-			printf("return ");
-			PrintExpr(((return_stmt *)stmt)->expr);
-			printf(";");
-			break;
-		case STMT_BREAK:
-			printf("break;");
-			break;
-		case STMT_CONTINUE:
-			printf("continue;");
-			break;
-		case STMT_IF: {
-			if_stmt *ifStmt = (if_stmt *)stmt;
-			printf("if ");
-			PrintExpr(ifStmt->condition);
+	case STMT_EXPR:
+		PrintExpr(((expr_stmt *)stmt)->expr);
+		printf(";");
+		break;
+	case STMT_RETURN:
+		printf("return ");
+		PrintExpr(((return_stmt *)stmt)->expr);
+		printf(";");
+		break;
+	case STMT_BREAK:
+		printf("break;");
+		break;
+	case STMT_CONTINUE:
+		printf("continue;");
+		break;
+	case STMT_IF: {
+		if_stmt *ifStmt = (if_stmt *)stmt;
+		printf("if ");
+		PrintExpr(ifStmt->condition);
+		printf(" ");
+		PrintStmt(ifStmt->if_branch);
+		if (ifStmt->else_branch) {
+			printf(" else ");
+			PrintStmt(ifStmt->else_branch);
+		}
+	} break;
+	case STMT_WHILE: {
+		while_stmt *whileStmt = (while_stmt *)stmt;
+		printf("while ");
+		PrintExpr(whileStmt->condition);
+		printf(" ");
+		PrintStmt(whileStmt->statement);
+	} break;
+	case STMT_BLOCK: {
+		block_stmt *blockStmt = (block_stmt *)stmt;
+		unsigned int i;
+		printf("{ ");
+		for (i = 0; i < blockStmt->statements.len; i++) {
+			PrintStmt(blockStmt->statements.data[i]);
 			printf(" ");
-			PrintStmt(ifStmt->if_branch);
-			if (ifStmt->else_branch) {
-				printf(" else ");
-				PrintStmt(ifStmt->else_branch);
-			}
-		} break;
-		case STMT_WHILE: {
-			while_stmt *whileStmt = (while_stmt *)stmt;
-			printf("while ");
-			PrintExpr(whileStmt->condition);
+		}
+		printf("}");
+	} break;
+	case STMT_DECL: {
+		decl_stmt *declStmt = (decl_stmt *)stmt;
+		printf("%s :", declStmt->decl.name.str);
+		if (declStmt->decl.type.kind != TYPE_INFERRED) {
 			printf(" ");
-			PrintStmt(whileStmt->statement);
-		} break;
-		case STMT_BLOCK: {
-			block_stmt *blockStmt = (block_stmt *)stmt;
-			unsigned int i;
-			printf("{ ");
-			for (i = 0; i < blockStmt->statements.len; i++) {
-				PrintStmt(blockStmt->statements.data[i]);
-				printf(" ");
-			}
-			printf("}");
-		} break;
-		case STMT_DECL: {
-			decl_stmt *declStmt = (decl_stmt *)stmt;
-			printf("%s :", declStmt->decl.name.str);
-			if (declStmt->decl.type.kind != TYPE_INFERRED) {
-				printf(" ");
-				PrintType(declStmt->decl.type);
-				printf(" ");
-			}
-			if (declStmt->decl.value) {
+			PrintType(declStmt->decl.type);
+			printf(" ");
+		}
+		if (declStmt->decl.value) {
+			if (declStmt->decl.isConst)
+				printf(": ");
+			else
 				printf("= ");
-				PrintExpr(declStmt->decl.value);
-			}
-			printf(";");
-		} break;
+			PrintExpr(declStmt->decl.value);
+		}
+		printf(";");
+	} break;
 	}
 }
