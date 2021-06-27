@@ -111,9 +111,45 @@ typedef struct {
 	unsigned int type;
 } binop_expr;
 
+enum {
+	STMT_EXPR,
+	STMT_RETURN,
+	STMT_BREAK,
+	STMT_CONTINUE,
+	STMT_IF,
+	STMT_WHILE,
+	STMT_BLOCK,
+};
+typedef struct {
+	unsigned int pos, type;
+} stmt_header;
+
+typedef struct {
+	stmt_header header;
+	expr_header *expr;
+} expr_stmt, return_stmt;
+
+typedef struct {
+	stmt_header header;
+	expr_header *condition;
+	stmt_header *if_branch, *else_branch;
+} if_stmt;
+
+typedef struct {
+	stmt_header header;
+	expr_header *condition;
+	stmt_header *statement;
+} while_stmt;
+
+typedef struct {
+	stmt_header header;
+	array_type(stmt_header *) statements;
+} block_stmt;
+
 /* function declarations */
 
 expr_header *ParseExpr(context *ctx);
+stmt_header *ParseStmt(context *ctx);
 /* Only used for debugging */
 void PrintExpr(expr_header *expr);
 

@@ -1,5 +1,19 @@
-foo(
-    bar + 10,
-    &baz ^,
-    boop,
-)
+{
+
+if foo {
+    foo(
+        bar + 10,
+        &baz ^,
+        boop,
+    );
+} else
+    bar;
+
+while x < 10  {
+    x += 1;
+    break;
+    continue;
+    return x;
+}
+
+}

@@ -72,5 +72,5 @@ main(int argc, char *argv[])
 		totalRead += (unsigned int)bytesRead;
 	}
 
-	PrintExpr(ParseExpr(&ctx));
+	PrintStmt(ParseStmt(&ctx));
 }

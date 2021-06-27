@@ -372,6 +372,10 @@ NextLiteralToken(context *ctx)
                 } else if (strcmp(buf.data, "false") == 0) {
 			tok.type = TOK_BOOL;
 			tok.val.i = 0;
+                } else if (strcmp(buf.data, "if") == 0) {
+			tok.type = TOK_IF;
+                } else if (strcmp(buf.data, "else") == 0) {
+			tok.type = TOK_ELSE;
                 } else if (strcmp(buf.data, "while") == 0) {
 			tok.type = TOK_WHILE;
                 } else if (strcmp(buf.data, "for") == 0) {

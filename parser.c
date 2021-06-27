@@ -9,7 +9,7 @@
 #include "parser.h"
 
 /* function implementations */
-#define ALLOC_FUNC(lower, upper, fullUpper) \
+#define EXPR_ALLOC_FUNC(lower, upper, fullUpper) \
 static lower##_expr * \
 Alloc##upper##Expr(void) \
 { \
@@ -19,16 +19,32 @@ Alloc##upper##Expr(void) \
 	return expr; \
 }
 
-ALLOC_FUNC(int, Int, INT);
-ALLOC_FUNC(float, Float, FLOAT);
-ALLOC_FUNC(bool, Bool, BOOL);
-ALLOC_FUNC(char, Char, CHAR);
-ALLOC_FUNC(str, Str, STR);
-ALLOC_FUNC(member, Member, MEMBER);
-ALLOC_FUNC(func, Func, FUNC);
-ALLOC_FUNC(ident, Ident, IDENT);
-ALLOC_FUNC(unop, Unop, UNOP);
-ALLOC_FUNC(binop, Binop, BINOP);
+EXPR_ALLOC_FUNC(int, Int, INT);
+EXPR_ALLOC_FUNC(float, Float, FLOAT);
+EXPR_ALLOC_FUNC(bool, Bool, BOOL);
+EXPR_ALLOC_FUNC(char, Char, CHAR);
+EXPR_ALLOC_FUNC(str, Str, STR);
+EXPR_ALLOC_FUNC(member, Member, MEMBER);
+EXPR_ALLOC_FUNC(func, Func, FUNC);
+EXPR_ALLOC_FUNC(ident, Ident, IDENT);
+EXPR_ALLOC_FUNC(unop, Unop, UNOP);
+EXPR_ALLOC_FUNC(binop, Binop, BINOP);
+
+#define STMT_ALLOC_FUNC(lower, upper, fullUpper) \
+static lower##_stmt * \
+Alloc##upper##Stmt(void) \
+{ \
+	lower##_stmt *stmt = xmalloc(sizeof(*stmt)); \
+	*stmt = (lower##_stmt) {0}; \
+	stmt->header.type = STMT_##fullUpper; \
+	return stmt; \
+}
+
+STMT_ALLOC_FUNC(expr, Expr, EXPR);
+STMT_ALLOC_FUNC(return, Return, RETURN);
+STMT_ALLOC_FUNC(if, If, IF);
+STMT_ALLOC_FUNC(while, While, WHILE);
+STMT_ALLOC_FUNC(block, Block, BLOCK);
 
 #define HANDLE_TOKEN(tokType, expr_type, Func, val) \
 	case tokType: { \
@@ -75,6 +91,8 @@ ParsePostfixExpr(context *ctx)
 	       tok.type == '[' || tok.type == '(') {
 		if (tok.type == '^') {
 			char nextType = PeekToken(2, ctx).type;
+			/* Check wether the caret is being used as
+			 * a bitwise xor operator */
 			if (nextType == '(' || (nextType >= FIRST_LIT_TOK &&
 						nextType <= LAST_LIT_TOK))
 				break;
@@ -108,8 +126,10 @@ ParsePostfixExpr(context *ctx)
 			while (tok.type != ')') {
 				ArrayAdd(&((func_expr *)expr)->args, ParseExpr(ctx));
 				tok = NextToken(ctx);
-				if (tok.type == ',' && PeekToken(1, ctx).type == ')')
+				if (tok.type == ',' && PeekToken(1, ctx).type == ')') {
+					NextToken(ctx);
 					break;
+				}
 				if (tok.type != ',' && tok.type != ')')
 					Error(ctx, tok.pos, "expected comma or closing parenthesis");
 			}
@@ -270,6 +290,75 @@ ParseExpr(context *ctx)
 	return expr;
 }
 
+stmt_header *
+ParseStmt(context *ctx)
+{
+	token tok = PeekToken(1, ctx);
+	stmt_header *stmt;
+
+	if (tok.type == ';') {
+		NextToken(ctx);
+		return NULL;
+	} else if (tok.type == TOK_BREAK) {
+		NextToken(ctx);
+		stmt = xmalloc(sizeof(*stmt));
+		stmt->type = STMT_BREAK;
+		stmt->pos = tok.pos;
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end break statement");
+	} else if (tok.type == TOK_CONTINUE) {
+		NextToken(ctx);
+		stmt = xmalloc(sizeof(*stmt));
+		stmt->type = STMT_CONTINUE;
+		stmt->pos = tok.pos;
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end continue statement");
+	} else if (tok.type == TOK_RETURN) {
+		NextToken(ctx);
+		stmt = (stmt_header *)AllocReturnStmt();
+		((return_stmt *)stmt)->expr = ParseExpr(ctx);
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end return statement");
+	} else if (tok.type == TOK_IF) {
+		NextToken(ctx);
+		stmt = (stmt_header *)AllocIfStmt();
+		((if_stmt *)stmt)->condition = ParseExpr(ctx);
+		((if_stmt *)stmt)->if_branch = ParseStmt(ctx);
+
+		tok = PeekToken(1, ctx);
+		if (tok.type == TOK_ELSE) {
+			NextToken(ctx);
+			((if_stmt *)stmt)->else_branch = ParseStmt(ctx);
+		}
+	} else if (tok.type == TOK_WHILE) {
+		NextToken(ctx);
+		stmt = (stmt_header *)AllocWhileStmt();
+		((while_stmt *)stmt)->condition = ParseExpr(ctx);
+		((while_stmt *)stmt)->statement = ParseStmt(ctx);
+	} else if (tok.type == '{') {
+		NextToken(ctx);
+		stmt = (stmt_header *)AllocBlockStmt();
+		while (PeekToken(1, ctx).type != '}') {
+			stmt_header *child_stmt = ParseStmt(ctx);
+			if (child_stmt)
+				ArrayAdd(&((block_stmt *)stmt)->statements,
+					 child_stmt);
+		}
+		NextToken(ctx);
+	} else {
+		stmt = (stmt_header *)AllocExprStmt();
+		((expr_stmt *)stmt)->expr = ParseExpr(ctx);
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end expression statement");
+	}
+
+	return stmt;
+}
+
 void
 PrintExpr(expr_header *expr)
 {
@@ -364,5 +453,59 @@ PrintExpr(expr_header *expr)
 		PrintExpr(binop->right);
 		printf(")");
 	} break;
+	}
+}
+
+void
+PrintStmt(stmt_header *stmt)
+{
+	if (!stmt) {
+		printf(";");
+		return;
+	}
+
+	switch (stmt->type) {
+		case STMT_EXPR:
+			PrintExpr(((expr_stmt *)stmt)->expr);
+			printf(";");
+			break;
+		case STMT_RETURN:
+			PrintExpr(((return_stmt *)stmt)->expr);
+			printf(";");
+			break;
+		case STMT_BREAK:
+			printf("break;");
+			break;
+		case STMT_CONTINUE:
+			printf("continue;");
+			break;
+		case STMT_IF: {
+			if_stmt *ifStmt = (if_stmt *)stmt;
+			printf("if ");
+			PrintExpr(ifStmt->condition);
+			printf(" ");
+			PrintStmt(ifStmt->if_branch);
+			if (ifStmt->else_branch) {
+				printf(" else ");
+				PrintStmt(ifStmt->else_branch);
+			}
+		} break;
+		case STMT_WHILE: {
+			while_stmt *whileStmt = (while_stmt *)stmt;
+			printf("while ");
+			PrintExpr(whileStmt->condition);
+			printf(" ");
+			PrintStmt(whileStmt->statement);
+		} break;
+		case STMT_BLOCK: {
+			block_stmt *blockStmt = (block_stmt *)stmt;
+			unsigned int i;
+			printf("{ ");
+			for (i = 0; i < blockStmt->statements.len; i++) {
+				PrintStmt(blockStmt->statements.data[i]);
+				printf(" ");
+			}
+			printf("}");
+		} break;
 	}
 }
