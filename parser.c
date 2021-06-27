@@ -39,17 +39,17 @@ ALLOC_FUNC(binop, Binop, BINOP);
 	} break;
 
 expr_header *
-ParseSingularExpr(void)
+ParseSingularExpr(context *ctx)
 {
-	token tok = NextToken();
+	token tok = NextToken(ctx);
 	switch (tok.type) {
 	case '(': {
-		expr_header *expr = ParseExpr();
-		token next = NextToken();
+		expr_header *expr = ParseExpr(ctx);
+		token next = NextToken(ctx);
 		if (next.type != ')')
-			Error(next.pos, "expected closing parenthesis");
+			Error(ctx, next.pos, "expected closing parenthesis");
 		if (expr->isParenthesized)
-			Warn(tok.pos, "useless parentheses");
+			Warn(ctx, tok.pos, "useless parentheses");
 		expr->isParenthesized = 1;
 		return expr;
 	} break;
@@ -60,88 +60,88 @@ ParseSingularExpr(void)
 	HANDLE_TOKEN(TOK_STR, str_expr, AllocStrExpr, tok.val.s)
 	HANDLE_TOKEN(TOK_IDENT, ident_expr, AllocIdentExpr, tok.val.s)
 	default:
-		Error(tok.pos, "unexpected token found while parsing expression");
+		Error(ctx, tok.pos, "unexpected token found while parsing expression");
 	}
 }
 
 expr_header *
-ParsePostfixExpr(void)
+ParsePostfixExpr(context *ctx)
 {
-	expr_header *child = ParseSingularExpr();
+	expr_header *child = ParseSingularExpr(ctx);
 	expr_header *expr = child;
-	token tok = PeekToken(1);
+	token tok = PeekToken(1, ctx);
 
 	while (tok.type == '^' || tok.type == '.' ||
 	       tok.type == '[' || tok.type == '(') {
 		if (tok.type == '^') {
-			char nextType = PeekToken(2).type;
+			char nextType = PeekToken(2, ctx).type;
 			if (nextType == '(' || (nextType >= FIRST_LIT_TOK &&
 						nextType <= LAST_LIT_TOK))
 				break;
 
-			NextToken();
+			NextToken(ctx);
 			expr = (expr_header *)AllocUnopExpr();
 			((unop_expr *)expr)->type = UNOP_DEREF;
 			((unop_expr *)expr)->child = child;
 			child = expr;
 		} else if (tok.type == '.') {
-			NextToken();
+			NextToken(ctx);
 			expr = (expr_header *)AllocMemberExpr();
 			((member_expr *)expr)->child = child;
-			tok = NextToken();
+			tok = NextToken(ctx);
 			if (tok.type != TOK_IDENT)
-				Error(tok.pos, "expected member name after '.'");
+				Error(ctx, tok.pos, "expected member name after '.'");
 			((member_expr *)expr)->member = tok.val.s;
 		} else if (tok.type == '[') {
-			NextToken();
+			NextToken(ctx);
 			expr = (expr_header *)AllocBinopExpr();
 			((binop_expr *)expr)->type = BINOP_INDEX;
 			((binop_expr *)expr)->left = child;
-			((binop_expr *)expr)->right = ParseExpr();
-			tok = NextToken();
+			((binop_expr *)expr)->right = ParseExpr(ctx);
+			tok = NextToken(ctx);
 			if (tok.type != ']')
-				Error(tok.pos, "expected closing bracket");
+				Error(ctx, tok.pos, "expected closing bracket");
 		} else {
-			NextToken();
+			NextToken(ctx);
 			expr = (expr_header *)AllocFuncExpr();
 			((func_expr *)expr)->func = child;
 			while (tok.type != ')') {
-				ArrayAdd(&((func_expr *)expr)->args, ParseExpr());
-				tok = NextToken();
-				if (tok.type == ',' && PeekToken(1).type == ')')
+				ArrayAdd(&((func_expr *)expr)->args, ParseExpr(ctx));
+				tok = NextToken(ctx);
+				if (tok.type == ',' && PeekToken(1, ctx).type == ')')
 					break;
 				if (tok.type != ',' && tok.type != ')')
-					Error(tok.pos, "expected comma or closing parenthesis");
+					Error(ctx, tok.pos, "expected comma or closing parenthesis");
 			}
 		}
 
-		tok = PeekToken(1);
+		tok = PeekToken(1, ctx);
 	}
 
 	return expr;
 }
 
 expr_header *
-ParsePrefixExpr(void)
+ParsePrefixExpr(context *ctx)
 {
-	token tok = PeekToken(1);
+	token tok = PeekToken(1, ctx);
 
 	if (tok.type == '&') {
-		NextToken();
+		NextToken(ctx);
 		unop_expr *expr = AllocUnopExpr();
 		expr->type = UNOP_ADDR_OF;
-		expr->child = ParsePrefixExpr();
+		expr->child = ParsePrefixExpr(ctx);
 		return (expr_header *)expr;
 	}
 	if (tok.type == '!') {
-		NextToken();
+		NextToken(ctx);
 		unop_expr *expr = AllocUnopExpr();
 		expr->type = UNOP_NOT;
-		expr->child = ParsePrefixExpr();
+		expr->child = ParsePrefixExpr(ctx);
 		return (expr_header *)expr;
 	}
 
-	return ParsePostfixExpr();
+	return ParsePostfixExpr(ctx);
 }
 
 unsigned int
@@ -189,10 +189,10 @@ BinopPrecedence(unsigned int type)
 }
 
 expr_header *
-ParseExpr(void)
+ParseExpr(context *ctx)
 {
-	expr_header *expr = ParsePrefixExpr();
-	token tok = PeekToken(1);
+	expr_header *expr = ParsePrefixExpr(ctx);
+	token tok = PeekToken(1, ctx);
 	int type = -1;
 
 	switch (tok.type) {
@@ -236,8 +236,8 @@ ParseExpr(void)
 		expr_header *right;
 		binop_expr *expr_binop;
 
-		NextToken();
-		right = ParseExpr();
+		NextToken(ctx);
+		right = ParseExpr(ctx);
 
 		expr = (expr_header *)AllocBinopExpr();
 		expr_binop = (binop_expr *)expr;

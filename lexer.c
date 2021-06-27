@@ -8,29 +8,25 @@
 
 /* TODO: think about allowing unicode in identifiers? */
 
-/* variables */
-static array_type(token) cachedTokens;
-unsigned int srcIndex;
-
 /* function implementations */
 static int
-GetChar(void)
+GetChar(context *ctx)
 {
 	int c;
-	if (srcIndex == srcSize)
+	if (ctx->srcIndex == ctx->srcSize)
 		return EOF;
 
-	c = srcCode[srcIndex];
+	c = ctx->srcCode[ctx->srcIndex];
 	if ((unsigned int)c <= 32 && c != '\n' && c != '\r' && c != ' ' && c != '\t')
-		Error(srcIndex, "found illegal character 0x%hhx", (char)c);
-	srcIndex++;
+		Error(ctx, ctx->srcIndex, "found illegal character 0x%hhx", (char)c);
+	ctx->srcIndex++;
 	return c;
 }
 
 static void
-UngetChar(void)
+UngetChar(context *ctx)
 {
-	srcIndex--;
+	ctx->srcIndex--;
 }
 
 void
@@ -68,17 +64,17 @@ PrintToken(token tok)
 }
 
 static char
-CheckForAssign(char type, char assignType)
+CheckForAssign(char type, char assignType, context *ctx)
 {
-	int c = GetChar();
+	int c = GetChar(ctx);
 	if (c == '=')
 		return assignType;
-	UngetChar();
+	UngetChar(ctx);
 	return type;
 }
 
 static token
-ReadNumber(int c)
+ReadNumber(int c, context *ctx)
 {
 	string buf = {0};
 	int isFloat = 0;
@@ -86,18 +82,18 @@ ReadNumber(int c)
 	token tok;
 
 	if (c == '0') {
-		int next = GetChar();
+		int next = GetChar(ctx);
 		if (next == 'x') {
 			radix = 16;
-			c = GetChar();
+			c = GetChar(ctx);
 		} else if (next == 'o') {
 			radix = 8;
-			c = GetChar();
+			c = GetChar(ctx);
 		} else if (next == 'b') {
 			radix = 2;
-			c = GetChar();
+			c = GetChar(ctx);
 		} else {
-			UngetChar();
+			UngetChar(ctx);
 		}
 	}
 
@@ -116,9 +112,9 @@ ReadNumber(int c)
 			break;
 		}
 		StringAddC(&buf, (char)c);
-		c = GetChar();
+		c = GetChar(ctx);
 	}
-	UngetChar();
+	UngetChar(ctx);
 
 	if (isFloat) {
 		tok.type = TOK_FLOAT;
@@ -142,13 +138,13 @@ HexToInt(char c)
 }
 
 static char
-GetEscape(void)
+GetEscape(context *ctx)
 {
-	unsigned int backslashPos = srcIndex - 1;
-	int c = GetChar();
+	unsigned int backslashPos = ctx->srcIndex - 1;
+	int c = GetChar(ctx);
 
 	switch (c) {
-	case '\0': Error(backslashPos, "unexpected EOF after '\\' escape");
+	case '\0': Error(ctx, backslashPos, "unexpected EOF after '\\' escape");
 	case 'a': c = '\a'; break;
 	case 'b': c = '\b'; break;
 	case 'e': c = '\x1b'; break;
@@ -163,35 +159,35 @@ GetEscape(void)
 	case 'x': {
 		unsigned char val = 0;
 
-		c = GetChar();
+		c = GetChar(ctx);
 		if (!isxdigit(c))
-			Error(backslashPos, "expected two hex digits after \\x escape");
+			Error(ctx, backslashPos, "expected two hex digits after \\x escape");
 		val = (unsigned char)(val * 16) + HexToInt((char)c);
-		c = GetChar();
+		c = GetChar(ctx);
 		if (!isxdigit(c))
-			Error(backslashPos, "expected two hex digits after \\x escape");
+			Error(ctx, backslashPos, "expected two hex digits after \\x escape");
 		val = (unsigned char)(val * 16) + HexToInt((char)c);
 
 		c = (char)val;
 		break;
 	}
 	default:
-		Error(backslashPos, "invalid escape sequence \\%c", c);
+		Error(ctx, backslashPos, "invalid escape sequence \\%c", c);
 	}
 
 	return (char)c;
 }
 
 static symbol
-ReadString(void)
+ReadString(context *ctx)
 {
 	string buf = {0};
 	symbol sym;
 
 	for (;;) {
-		int c = GetChar();
+		int c = GetChar(ctx);
 		if (c == '\\')
-			c = GetEscape();
+			c = GetEscape(ctx);
 		if (c == EOF || c == '"')
 			break;
 		StringAddC(&buf, (char)c);
@@ -202,36 +198,37 @@ ReadString(void)
 	return sym;
 }
 
+/* TODO: clean this up */
 static unsigned long long
-GetCodePoint(void)
+GetCodePoint(context *ctx)
 {
-	int c = GetChar();
+	int c = GetChar(ctx);
 	unsigned int uc = (unsigned int)c;
 	if (c == EOF)
-		Error(srcIndex, "unexpected EOF in character literal");
+		Error(ctx, ctx->srcIndex, "unexpected EOF in character literal");
 	if (uc <= 0x7f) {
 		puts("1");
 		return (unsigned long long)c;
 	} else if ((uc & 0xe0) == 0xc0) {
 		unsigned long long buf[2] = {uc & 0x1f};
-		c = GetChar();
+		c = GetChar(ctx);
 		uc = (unsigned int)c;
 		if (c == EOF)
-			Error(srcIndex, "unexpected EOF in character literal");
+			Error(ctx, ctx->srcIndex, "unexpected EOF in character literal");
 		if ((uc & 0xc0) != 0x80)
-			Error(srcIndex, "invalid byte in character literal");
+			Error(ctx, ctx->srcIndex, "invalid byte in character literal");
 		buf[1] = uc & 0x3f;
 		return buf[1] | (buf[0] << 6);
 	} else if ((c & 0xf0) == 0xe0) {
 		unsigned long long buf[3] = {uc & 0xf};
 		unsigned int i;
 		for (i = 1; i < LEN(buf); i++) {
-			c = GetChar();
+			c = GetChar(ctx);
 			uc = (unsigned int)c;
 			if (c == EOF)
-				Error(srcIndex, "unexpected EOF in character literal");
+				Error(ctx, ctx->srcIndex, "unexpected EOF in character literal");
 			if ((uc & 0xc0) != 0x80)
-				Error(srcIndex, "invalid byte in character literal");
+				Error(ctx, ctx->srcIndex, "invalid byte in character literal");
 			buf[i] = uc & 0x3f;
 		}
 		return buf[2] | (buf[1] << 6) | (buf[0] << 12);
@@ -239,131 +236,132 @@ GetCodePoint(void)
 		unsigned long long buf[4] = {uc & 0x7};
 		unsigned int i;
 		for (i = 1; i < LEN(buf); i++) {
-			c = GetChar();
+			c = GetChar(ctx);
 			uc = (unsigned int)c;
 			if (c == EOF)
-				Error(srcIndex, "unexpected EOF in character literal");
+				Error(ctx, ctx->srcIndex, "unexpected EOF in character literal");
 			if ((uc & 0xc0) != 0x80)
-				Error(srcIndex, "invalid byte in character literal");
+				Error(ctx, ctx->srcIndex, "invalid byte in character literal");
 			buf[i] = uc & 0x3f;
 		}
 		return buf[3] | (buf[2] << 6) | (buf[1] << 12) | (buf[0] << 18);
 	} else {
-		Error(srcIndex, "invalid byte in character literal");
+		Error(ctx, ctx->srcIndex, "invalid byte in character literal");
 	}
 }
 
 static token
-NextLiteralToken(void)
+NextLiteralToken(context *ctx)
 {
-	int c = GetChar();
+	int c = GetChar(ctx);
 	token tok;
 
 	/* TODO: make this... thing cleaner */
 	while (c == '\n' || c == '\r' || c == ' ' || c == '\t' || c == '/') {
 		if (c == '/') {
-			c = GetChar();
+			c = GetChar(ctx);
 			if (c == '*') {
 				unsigned int nesting = 1;
-				c = GetChar();
+				c = GetChar(ctx);
 				for (;;) {
-					c = GetChar();
+					c = GetChar(ctx);
 					if (c == '*') {
-						c = GetChar();
+						c = GetChar(ctx);
 						if (c == '/') {
 							nesting--;
 							if (!nesting)
 								break;
 						}
 					} else if (c == '/') {
-						c = GetChar();
+						c = GetChar(ctx);
 						if (c == '*')
 							nesting++;
 					}
 				}
 			} else if (c == '/') {
 				while (c != '\n')
-					c = GetChar();
+					c = GetChar(ctx);
 			}
 		}
-		c = GetChar();
+		c = GetChar(ctx);
 	}
-	tok.pos = srcIndex;
+	tok.pos = ctx->srcIndex;
 
 	switch (c) {
 	case EOF: tok.type = TOK_EOF; return tok;
-	case '=': tok.type = CheckForAssign('=', TOK_EQ); return tok;
-	case '!': tok.type = CheckForAssign('!', TOK_NEQ); return tok;
+	case '=': tok.type = CheckForAssign('=', TOK_EQ, ctx); return tok;
+	case '!': tok.type = CheckForAssign('!', TOK_NEQ, ctx); return tok;
 	case '.': tok.type = '.'; return tok;
 	case '>':
-		c = GetChar();
+		c = GetChar(ctx);
 		if (c == '>') {
-			tok.type = CheckForAssign(TOK_RSHIFT, TOK_RSHIFT_ASS);
+			tok.type = CheckForAssign(TOK_RSHIFT, TOK_RSHIFT_ASS, ctx);
 			return tok;
 		}
-		UngetChar();
-		tok.type = CheckForAssign('>', TOK_GTE); return tok;
-	case '<':
-		c = GetChar();
-		if (c == '<') {
-			tok.type = CheckForAssign(TOK_LSHIFT, TOK_LSHIFT_ASS);
-			return tok;
-		}
-		UngetChar();
-		tok.type = CheckForAssign('<', TOK_LTE);
+		UngetChar(ctx);
+		tok.type = CheckForAssign('>', TOK_GTE, ctx);
 		return tok;
-	case '+': tok.type = CheckForAssign('+', TOK_ADD_ASS); return tok;
+	case '<':
+		c = GetChar(ctx);
+		if (c == '<') {
+			tok.type = CheckForAssign(TOK_LSHIFT, TOK_LSHIFT_ASS, ctx);
+			return tok;
+		}
+		UngetChar(ctx);
+		tok.type = CheckForAssign('<', TOK_LTE, ctx);
+		return tok;
+	case '+': tok.type = CheckForAssign('+', TOK_ADD_ASS, ctx); return tok;
 	case '-':
-		c = GetChar();
+		c = GetChar(ctx);
 		if (c == '>') {
 			tok.type = TOK_ARROW;
 			return tok;
 		}
-		UngetChar();
-		tok.type = CheckForAssign('-', TOK_SUB_ASS);
+		UngetChar(ctx);
+		tok.type = CheckForAssign('-', TOK_SUB_ASS, ctx);
 		return tok;
-	case '*': tok.type = CheckForAssign('*', TOK_MUL_ASS); return tok;
-	case '/': tok.type = CheckForAssign('/', TOK_DIV_ASS); return tok;
-	case '%': tok.type = CheckForAssign('%', TOK_MOD_ASS); return tok;
-	case '^': tok.type = CheckForAssign('^', TOK_BITXOR_ASS); return tok;
+	case '*': tok.type = CheckForAssign('*', TOK_MUL_ASS, ctx); return tok;
+	case '/': tok.type = CheckForAssign('/', TOK_DIV_ASS, ctx); return tok;
+	case '%': tok.type = CheckForAssign('%', TOK_MOD_ASS, ctx); return tok;
+	case '^': tok.type = CheckForAssign('^', TOK_BITXOR_ASS, ctx); return tok;
 	case '&':
-		c = GetChar();
+		c = GetChar(ctx);
 		if (c == '&') {
 			tok.type = TOK_AND;
 			return tok;
 		}
-		UngetChar();
-		tok.type = CheckForAssign('&', TOK_BITAND_ASS);
+		UngetChar(ctx);
+		tok.type = CheckForAssign('&', TOK_BITAND_ASS, ctx);
 		return tok;
 	case '|':
-		c = GetChar();
+		c = GetChar(ctx);
 		if (c == '|') {
 			tok.type = TOK_OR;
 			return tok;
 		}
-		UngetChar();
-		tok.type = CheckForAssign('|', TOK_BITOR_ASS);
+		UngetChar(ctx);
+		tok.type = CheckForAssign('|', TOK_BITOR_ASS, ctx);
 		return tok;
 	case '"':
 		tok.type = TOK_STR;
-		tok.val.s = ReadString();
+		tok.val.s = ReadString(ctx);
 		return tok;
 	case '\'':
 		tok.type = TOK_CHAR;
-		tok.val.i = GetCodePoint();
+		tok.val.i = GetCodePoint(ctx);
 		return tok;
 	}
 
 	if (isdigit(c))
-		return ReadNumber(c);
+		return ReadNumber(c, ctx);
 	if (isalpha(c) || c == '_') {
 		string buf = {0};
 
 		for (;;) {
 			StringAddC(&buf, (char)c);
-			c = GetChar();
+			c = GetChar(ctx);
 			if (!isalnum(c) && c != '_') {
-				UngetChar();
+				UngetChar(ctx);
 				break;
 			}
 		}
@@ -396,9 +394,9 @@ NextLiteralToken(void)
 	if (c != '.' && c != ':' && c != ';' && c != ',' && c != '(' && c != ')'
 	 && c != '[' && c != ']' && c != '{' && c != '}') {
 		if (isprint(c))
-			Error(tok.pos, "found illegal character '%c'", c);
+			Error(ctx, tok.pos, "found illegal character '%c'", c);
 		else
-			Error(tok.pos, "found illegal character 0x%hhx", c);
+			Error(ctx, tok.pos, "found illegal character 0x%hhx", c);
 	}
 
 	/* It it got here, it is a single-character punctuation token */
@@ -407,20 +405,20 @@ NextLiteralToken(void)
 }
 
 token
-NextToken(void)
+NextToken(context *ctx)
 {
-	if (cachedTokens.len) {
-		token tok = cachedTokens.data[0];
-		ArrayRemove(&cachedTokens, 0);
+	if (ctx->cachedTokens.len) {
+		token tok = ctx->cachedTokens.data[0];
+		ArrayRemove(&ctx->cachedTokens, 0);
 		return tok;
 	}
-	return NextLiteralToken();
+	return NextLiteralToken(ctx);
 }
 
 token
-PeekToken(unsigned int i)
+PeekToken(unsigned int i, context *ctx)
 {
-	while (cachedTokens.len < i)
-		ArrayAdd(&cachedTokens, NextLiteralToken());
-	return cachedTokens.data[i - 1];
+	while (ctx->cachedTokens.len < i)
+		ArrayAdd(&ctx->cachedTokens, NextLiteralToken(ctx));
+	return ctx->cachedTokens.data[i - 1];
 }

@@ -6,11 +6,14 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "lexer.h"
 
 /* macros */
 #define SYMBUFLEN 1024
 
 /* variables */
+
+/* TODO: make this thread-safe when implementing multithreading */
 static struct {
 	/* The current buffer in which new symbols are stored. This is overwritten,
 	 * because the memory for symbols is never freed, since it is used for
@@ -23,9 +26,6 @@ static struct {
 	unsigned int len, cap;
 } symbolPool;
 char *argv0;
-char *srcPath;
-char *srcCode;
-unsigned int srcSize;
 
 /* function implementations */
 void
@@ -48,13 +48,13 @@ Die(char *fmt, ...)
 }
 
 static void
-PosToCoords(unsigned int pos, unsigned int *line, unsigned int *col)
+PosToCoords(context *ctx, unsigned int pos, unsigned int *line, unsigned int *col)
 {
 	unsigned int i;
 	*line = 1;
 	*col = 0;
 	for (i = 0; i < pos; i++) {
-		if (srcCode[i] == '\n') {
+		if (ctx->srcCode[i] == '\n') {
 			++*line;
 			*col = 0;
 		} else {
@@ -64,18 +64,18 @@ PosToCoords(unsigned int pos, unsigned int *line, unsigned int *col)
 }
 
 void
-Error(unsigned int pos, char *fmt, ...)
+Error(context *ctx, unsigned int pos, char *fmt, ...)
 {
 	va_list args;
 	unsigned int line, col;
 
-	PosToCoords(pos, &line, &col);
+	PosToCoords(ctx, pos, &line, &col);
 	if (isatty(STDOUT_FILENO))
 		fprintf(stderr, "%s:%u:%u: \x1b[1;91merror\x1b[m: ",
-			srcPath, line, col);
+			ctx->srcPath, line, col);
 	else
 		fprintf(stderr, "%s:%u:%u: error: ",
-			srcPath, line, col);
+			ctx->srcPath, line, col);
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);
@@ -84,18 +84,18 @@ Error(unsigned int pos, char *fmt, ...)
 }
 
 void
-Warn(unsigned int pos, char *fmt, ...)
+Warn(context *ctx, unsigned int pos, char *fmt, ...)
 {
 	va_list args;
 	unsigned int line, col;
 
-	PosToCoords(pos, &line, &col);
+	PosToCoords(ctx, pos, &line, &col);
 	if (isatty(STDOUT_FILENO))
 		fprintf(stderr, "%s:%u:%u: \x1b[1;95mwarning\x1b[m: ",
-			srcPath, line, col);
+			ctx->srcPath, line, col);
 	else
 		fprintf(stderr, "%s:%u:%u: warning: ",
-			srcPath, line, col);
+			ctx->srcPath, line, col);
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);

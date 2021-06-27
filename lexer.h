@@ -44,7 +44,7 @@ enum {
 	TOK_CONTINUE,
 	TOK_RETURN,
 };
-typedef struct {
+struct token {
 	union {
 		double f;
 		unsigned long long i;
@@ -52,14 +52,14 @@ typedef struct {
 	} val;
 	unsigned int pos;
 	char type;
-} token;
+};
 
 /* function declarations */
 
 /* Only used for debugging */
 void PrintToken(token);
 
-token NextToken(void);
-token PeekToken(unsigned int);
+token NextToken(context *);
+token PeekToken(unsigned int, context *);
 
 #endif /* LEXER_H */

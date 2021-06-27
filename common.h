@@ -1,4 +1,4 @@
-/* Requires stdlib.h and string.h */
+/* Requires stdlib.h, string.h and lexer.h */
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -34,16 +34,16 @@ typedef struct {
 	unsigned int len, cap;
 } table;
 
+/* Context is defined later on because it uses a dynamic array */
+typedef struct context context;
+
 /* variables */
 extern char *argv0;
-extern char *srcPath;
-extern char *srcCode;
-extern unsigned int srcSize;
 
 /* function declarations */
 NORETURN void Die(char *, ...);
-NORETURN void Error(unsigned int, char *, ...);
-void Warn(unsigned int, char *, ...);
+NORETURN void Error(context *ctx, unsigned int, char *, ...);
+void Warn(context *ctx, unsigned int, char *, ...);
 void *xmalloc(size_t);
 void *xrealloc(void *, size_t);
 symbol AddSymbol(char *, unsigned int);
@@ -70,5 +70,15 @@ void TableFree(table *, void (*)(void *));
 	(a)->len--, \
 	memmove((a)->data + i, (a)->data + i + 1, sizeof(*(a)->data) * ((a)->len - i)) \
 )
+
+typedef struct token token;
+struct context {
+	char *srcPath, *srcCode;
+	unsigned int srcSize;
+
+	/* Used only by the lexer */
+	unsigned int srcIndex;
+	array_type(token) cachedTokens;
+};
 
 #endif /* COMMON_H */

@@ -31,6 +31,7 @@ main(int argc, char *argv[])
 	struct stat fileStat;
 	int i, status, srcFile;
 	unsigned int totalRead;
+	context ctx = {0};
 
 	/* To make sure unicode code points in character literals are printed
 	 * correctly */
@@ -44,30 +45,32 @@ main(int argc, char *argv[])
 		if (strcmp(argv[i], "--help") == 0)
 			Usage();
 		else
-			srcPath = argv[i];
+			ctx.srcPath = argv[i];
 	}
 
-	if (!srcPath)
+	if (!ctx.srcPath)
 		Die("%s: no input file", argv0);
 
-	srcFile = open(srcPath, O_RDONLY);
+	srcFile = open(ctx.srcPath, O_RDONLY);
 	if (srcFile < 0)
-		Die("%s: failed to open %s:", argv0, srcPath);
+		Die("%s: failed to open %s:", argv0, ctx.srcPath);
 	status = fstat(srcFile, &fileStat);
 	if (status < 0)
-		Die("%s: failed to get file status of %s:", argv0, srcPath);
+		Die("%s: failed to get file status of %s:", argv0, ctx.srcPath);
 
-	srcSize = (unsigned int)fileStat.st_size;
-	srcCode = xmalloc(srcSize);
+	ctx.srcSize = (unsigned int)fileStat.st_size;
+	ctx.srcCode = xmalloc(ctx.srcSize);
 	totalRead = 0;
-	while (totalRead < srcSize) {
-		ssize_t bytesRead = read(srcFile, srcCode + totalRead, srcSize - totalRead);
+	while (totalRead < ctx.srcSize) {
+		ssize_t bytesRead = read(srcFile,
+					 ctx.srcCode + totalRead,
+					 ctx.srcSize - totalRead);
 		if (!bytesRead)
 			break;
 		if (bytesRead < 0)
-			Die("%s: failed to read file %s:", argv0, srcPath);
+			Die("%s: failed to read file %s:", argv0, ctx.srcPath);
 		totalRead += (unsigned int)bytesRead;
 	}
 
-	PrintExpr(ParseExpr());
+	PrintExpr(ParseExpr(&ctx));
 }

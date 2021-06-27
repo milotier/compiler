@@ -113,7 +113,7 @@ typedef struct {
 
 /* function declarations */
 
-expr_header *ParseExpr(void);
+expr_header *ParseExpr(context *ctx);
 /* Only used for debugging */
 void PrintExpr(expr_header *expr);
 
