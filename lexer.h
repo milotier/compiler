@@ -36,6 +36,18 @@ enum {
 	TOK_LSHIFT_ASS,
 	TOK_RSHIFT_ASS,
 
+        TOK_U8,
+        TOK_U16,
+        TOK_U32,
+        TOK_U64,
+        TOK_I8,
+        TOK_I16,
+        TOK_I32,
+        TOK_I64,
+        TOK_F32,
+        TOK_F64,
+        TOK_CHAR_TYPE,
+
 	TOK_IF,
 	TOK_ELSE,
 	TOK_WHILE,

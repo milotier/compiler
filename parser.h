@@ -112,6 +112,18 @@ typedef struct {
 } binop_expr;
 
 enum {
+	TYPE_INFERRED,
+	TYPE_ANY_INT,
+	TYPE_INT,
+	TYPE_UINT,
+	TYPE_FLOAT,
+	TYPE_CHAR,
+};
+typedef struct {
+	unsigned char kind, width;
+} data_type;
+
+enum {
 	STMT_EXPR,
 	STMT_RETURN,
 	STMT_BREAK,
@@ -119,6 +131,7 @@ enum {
 	STMT_IF,
 	STMT_WHILE,
 	STMT_BLOCK,
+	STMT_DECL,
 };
 typedef struct {
 	unsigned int pos, type;
@@ -145,6 +158,13 @@ typedef struct {
 	stmt_header header;
 	array_type(stmt_header *) statements;
 } block_stmt;
+
+typedef struct {
+	stmt_header header;
+	symbol name;
+	expr_header *value;
+	data_type type;
+} decl_stmt;
 
 /* function declarations */
 

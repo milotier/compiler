@@ -45,6 +45,31 @@ STMT_ALLOC_FUNC(return, Return, RETURN);
 STMT_ALLOC_FUNC(if, If, IF);
 STMT_ALLOC_FUNC(while, While, WHILE);
 STMT_ALLOC_FUNC(block, Block, BLOCK);
+STMT_ALLOC_FUNC(decl, Decl, DECL);
+
+static data_type
+ParseType(context *ctx)
+{
+	data_type type = {0};
+	token tok = NextToken(ctx);
+
+	switch (tok.type) {
+	case TOK_U8: type.kind = TYPE_UINT; type.width = 8; break;
+	case TOK_U16: type.kind = TYPE_UINT; type.width = 16; break;
+	case TOK_U32: type.kind = TYPE_UINT; type.width = 32; break;
+	case TOK_U64: type.kind = TYPE_UINT; type.width = 64; break;
+	case TOK_I8: type.kind = TYPE_INT; type.width = 8; break;
+	case TOK_I16: type.kind = TYPE_INT; type.width = 16; break;
+	case TOK_I32: type.kind = TYPE_INT; type.width = 32; break;
+	case TOK_I64: type.kind = TYPE_INT; type.width = 64; break;
+	case TOK_F32: type.kind = TYPE_FLOAT; type.width = 32; break;
+	case TOK_F64: type.kind = TYPE_FLOAT; type.width = 64; break;
+	case TOK_CHAR_TYPE: type.kind = TYPE_CHAR; break;
+	default: Error(ctx, tok.pos, "expected type");
+	}
+
+	return type;
+}
 
 #define HANDLE_TOKEN(tokType, expr_type, Func, val) \
 	case tokType: { \
@@ -54,7 +79,7 @@ STMT_ALLOC_FUNC(block, Block, BLOCK);
 		return (expr_header *)expr; \
 	} break;
 
-expr_header *
+static expr_header *
 ParseSingularExpr(context *ctx)
 {
 	token tok = NextToken(ctx);
@@ -80,7 +105,7 @@ ParseSingularExpr(context *ctx)
 	}
 }
 
-expr_header *
+static expr_header *
 ParsePostfixExpr(context *ctx)
 {
 	expr_header *child = ParseSingularExpr(ctx);
@@ -145,7 +170,7 @@ ParsePostfixExpr(context *ctx)
 	return expr;
 }
 
-expr_header *
+static expr_header *
 ParsePrefixExpr(context *ctx)
 {
 	token tok = PeekToken(1, ctx);
@@ -170,7 +195,7 @@ ParsePrefixExpr(context *ctx)
 	return ParsePostfixExpr(ctx);
 }
 
-unsigned int
+static unsigned int
 BinopPrecedence(unsigned int type)
 {
 	switch (type) {
@@ -356,6 +381,23 @@ ParseStmt(context *ctx)
 					 child_stmt);
 		}
 		NextToken(ctx);
+	} else if (tok.type == TOK_IDENT && PeekToken(2, ctx).type == ':') {
+		stmt = (stmt_header *)AllocDeclStmt();
+		((decl_stmt *)stmt)->name = tok.val.s;
+		NextToken(ctx);
+		tok = NextToken(ctx);
+		stmt->pos = tok.pos;
+
+		tok = PeekToken(1, ctx);
+		if (tok.type != '=')
+			((decl_stmt *)stmt)->type = ParseType(ctx);
+		tok = NextToken(ctx);
+		if (tok.type == '=')
+			((decl_stmt *)stmt)->value = ParseExpr(ctx);
+
+		tok = NextToken(ctx);
+		if (tok.type != ';')
+			Error(ctx, tok.pos, "expected semicolon to end declaration");
 	} else {
 		stmt = (stmt_header *)AllocExprStmt();
 		((expr_stmt *)stmt)->expr = ParseExpr(ctx);
@@ -465,6 +507,17 @@ PrintExpr(expr_header *expr)
 	}
 }
 
+static void
+PrintType(data_type type)
+{
+	switch (type.kind) {
+	case TYPE_UINT: printf("u%hhu", type.width); break;
+	case TYPE_INT: printf("i%hhu", type.width); break;
+	case TYPE_FLOAT: printf("f%hhu", type.width); break;
+	case TYPE_CHAR: printf("char"); break;
+	}
+}
+
 void
 PrintStmt(stmt_header *stmt)
 {
@@ -516,6 +569,20 @@ PrintStmt(stmt_header *stmt)
 				printf(" ");
 			}
 			printf("}");
+		} break;
+		case STMT_DECL: {
+			decl_stmt *declStmt = (decl_stmt *)stmt;
+			printf("%s :", declStmt->name.str);
+			if (declStmt->type.kind != TYPE_INFERRED) {
+				printf(" ");
+				PrintType(declStmt->type);
+				printf(" ");
+			}
+			if (declStmt->value) {
+				printf("= ");
+				PrintExpr(declStmt->value);
+			}
+			printf(";");
 		} break;
 	}
 }

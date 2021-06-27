@@ -372,6 +372,28 @@ NextLiteralToken(context *ctx)
                 } else if (strcmp(buf.data, "false") == 0) {
 			tok.type = TOK_BOOL;
 			tok.val.i = 0;
+                } else if (strcmp(buf.data, "u8") == 0) {
+			tok.type = TOK_U8;
+                } else if (strcmp(buf.data, "u16") == 0) {
+			tok.type = TOK_U16;
+                } else if (strcmp(buf.data, "u32") == 0) {
+			tok.type = TOK_U32;
+                } else if (strcmp(buf.data, "u64") == 0) {
+			tok.type = TOK_U64;
+                } else if (strcmp(buf.data, "i8") == 0) {
+			tok.type = TOK_I8;
+                } else if (strcmp(buf.data, "i16") == 0) {
+			tok.type = TOK_I16;
+                } else if (strcmp(buf.data, "i32") == 0) {
+			tok.type = TOK_I32;
+                } else if (strcmp(buf.data, "i64") == 0) {
+			tok.type = TOK_I64;
+                } else if (strcmp(buf.data, "f32") == 0) {
+			tok.type = TOK_F32;
+                } else if (strcmp(buf.data, "f64") == 0) {
+			tok.type = TOK_F64;
+                } else if (strcmp(buf.data, "char") == 0) {
+			tok.type = TOK_CHAR_TYPE;
                 } else if (strcmp(buf.data, "if") == 0) {
 			tok.type = TOK_IF;
                 } else if (strcmp(buf.data, "else") == 0) {

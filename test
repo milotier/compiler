@@ -16,4 +16,6 @@ while x < 10  {
     return x;
 }
 
+foo : u32 = bar + baz;
+
 }
