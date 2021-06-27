@@ -99,12 +99,14 @@ ParsePostfixExpr(context *ctx)
 
 			NextToken(ctx);
 			expr = (expr_header *)AllocUnopExpr();
+			expr->pos = tok.pos;
 			((unop_expr *)expr)->type = UNOP_DEREF;
 			((unop_expr *)expr)->child = child;
 			child = expr;
 		} else if (tok.type == '.') {
 			NextToken(ctx);
 			expr = (expr_header *)AllocMemberExpr();
+			expr->pos = tok.pos;
 			((member_expr *)expr)->child = child;
 			tok = NextToken(ctx);
 			if (tok.type != TOK_IDENT)
@@ -113,6 +115,7 @@ ParsePostfixExpr(context *ctx)
 		} else if (tok.type == '[') {
 			NextToken(ctx);
 			expr = (expr_header *)AllocBinopExpr();
+			expr->pos = tok.pos;
 			((binop_expr *)expr)->type = BINOP_INDEX;
 			((binop_expr *)expr)->left = child;
 			((binop_expr *)expr)->right = ParseExpr(ctx);
@@ -122,6 +125,7 @@ ParsePostfixExpr(context *ctx)
 		} else {
 			NextToken(ctx);
 			expr = (expr_header *)AllocFuncExpr();
+			expr->pos = child->pos;
 			((func_expr *)expr)->func = child;
 			while (tok.type != ')') {
 				ArrayAdd(&((func_expr *)expr)->args, ParseExpr(ctx));
@@ -149,6 +153,7 @@ ParsePrefixExpr(context *ctx)
 	if (tok.type == '&') {
 		NextToken(ctx);
 		unop_expr *expr = AllocUnopExpr();
+		expr->header.pos = tok.pos;
 		expr->type = UNOP_ADDR_OF;
 		expr->child = ParsePrefixExpr(ctx);
 		return (expr_header *)expr;
@@ -156,6 +161,7 @@ ParsePrefixExpr(context *ctx)
 	if (tok.type == '!') {
 		NextToken(ctx);
 		unop_expr *expr = AllocUnopExpr();
+		expr->header.pos = tok.pos;
 		expr->type = UNOP_NOT;
 		expr->child = ParsePrefixExpr(ctx);
 		return (expr_header *)expr;
@@ -254,36 +260,34 @@ ParseExpr(context *ctx)
 	if (type >= 0) {
 		expr_header *left = expr;
 		expr_header *right;
-		binop_expr *expr_binop;
+		binop_expr *exprBinop;
 
 		NextToken(ctx);
 		right = ParseExpr(ctx);
 
 		expr = (expr_header *)AllocBinopExpr();
-		expr_binop = (binop_expr *)expr;
-		expr_binop->type = (unsigned int)type;
+		expr->pos = tok.pos;
+		exprBinop = (binop_expr *)expr;
+		exprBinop->type = (unsigned int)type;
+		exprBinop->left = left;
+		exprBinop->right = right;
 		/* Switch around members of expr and right so that it aligns with
 		 * their precedences */
 		if (right->type == EXPR_BINOP &&
 		    ((binop_expr *)right)->type != BINOP_INDEX &&
 		    !right->isParenthesized) {
-			binop_expr *right_binop = (binop_expr *)right;
-			unsigned int right_type = right_binop->type;
+			binop_expr *rightBinop = (binop_expr *)right;
+			unsigned int rightType = rightBinop->type;
 			if (BinopPrecedence((unsigned int)type) >
-			    BinopPrecedence(right_type)) {
-				expr_binop->type = right_type;
-				right_binop->type = (unsigned int)type;
-				expr_binop->right = right_binop->right;
-				right_binop->right = right_binop->left;
-				right_binop->left = left;
-				expr_binop->left = right;
-			} else {
-				expr_binop->left = left;
-				expr_binop->right = right;
+			    BinopPrecedence(rightType)) {
+				expr->pos = right->pos;
+				exprBinop->type = rightType;
+				rightBinop->type = (unsigned int)type;
+				exprBinop->right = rightBinop->right;
+				rightBinop->right = rightBinop->left;
+				rightBinop->left = left;
+				exprBinop->left = right;
 			}
-		} else {
-			expr_binop->left = left;
-			expr_binop->right = right;
 		}
 	}
 
@@ -318,6 +322,7 @@ ParseStmt(context *ctx)
 	} else if (tok.type == TOK_RETURN) {
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocReturnStmt();
+		stmt->pos = tok.pos;
 		((return_stmt *)stmt)->expr = ParseExpr(ctx);
 		tok = NextToken(ctx);
 		if (tok.type != ';')
@@ -325,6 +330,7 @@ ParseStmt(context *ctx)
 	} else if (tok.type == TOK_IF) {
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocIfStmt();
+		stmt->pos = tok.pos;
 		((if_stmt *)stmt)->condition = ParseExpr(ctx);
 		((if_stmt *)stmt)->if_branch = ParseStmt(ctx);
 
@@ -336,11 +342,13 @@ ParseStmt(context *ctx)
 	} else if (tok.type == TOK_WHILE) {
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocWhileStmt();
+		stmt->pos = tok.pos;
 		((while_stmt *)stmt)->condition = ParseExpr(ctx);
 		((while_stmt *)stmt)->statement = ParseStmt(ctx);
 	} else if (tok.type == '{') {
 		NextToken(ctx);
 		stmt = (stmt_header *)AllocBlockStmt();
+		stmt->pos = tok.pos;
 		while (PeekToken(1, ctx).type != '}') {
 			stmt_header *child_stmt = ParseStmt(ctx);
 			if (child_stmt)
@@ -351,6 +359,7 @@ ParseStmt(context *ctx)
 	} else {
 		stmt = (stmt_header *)AllocExprStmt();
 		((expr_stmt *)stmt)->expr = ParseExpr(ctx);
+		stmt->pos = ((expr_stmt *)stmt)->expr->pos;
 		tok = NextToken(ctx);
 		if (tok.type != ';')
 			Error(ctx, tok.pos, "expected semicolon to end expression statement");
@@ -470,6 +479,7 @@ PrintStmt(stmt_header *stmt)
 			printf(";");
 			break;
 		case STMT_RETURN:
+			printf("return ");
 			PrintExpr(((return_stmt *)stmt)->expr);
 			printf(";");
 			break;
