@@ -1,7 +1,7 @@
 #ifndef LEXER_H
 #define LEXER_H
 
-token NextToken(context *);
-token PeekToken(unsigned int, context *);
+Token nextToken(Context *);
+Token peekToken(unsigned int, Context *);
 
 #endif /* LEXER_H */

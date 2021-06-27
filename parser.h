@@ -2,6 +2,6 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-void Parse(context *);
+void parse(Context *);
 
 #endif /* PARSER_H */
