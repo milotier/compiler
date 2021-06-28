@@ -79,7 +79,10 @@ main(int argc, char *argv[]) {
     }
 
     parse(&ctx);
-    for (i = 0; (unsigned int)i < ctx.topScope.value.tbl.len; i++)
-        if (ctx.topScope.value.tbl.entries[i].sym.str)
+    for (i = 0; (unsigned int)i < ctx.topScope.value.tbl.cap; i++) {
+        if (ctx.topScope.value.tbl.entries[i].sym.str) {
             printDecl((Declaration *)ctx.topScope.value.tbl.entries[i].val);
+            putchar('\n');
+        }
+    }
 }

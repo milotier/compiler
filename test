@@ -17,3 +17,4 @@ func :: (foo: u32, bar: char) {
 
     var : u32 = bar + baz;
 }
+foo :: () { return 10; };

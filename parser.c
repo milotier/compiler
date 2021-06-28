@@ -78,11 +78,11 @@ parseDecl(Context *ctx, Scope *scope) {
     Declaration decl = {0};
     Token tok = nextToken(ctx);
     if (tok.type != TOK_IDENT)
-        error(ctx, tok.pos, "expected identifier in Declaration");
+        error(ctx, tok.pos, "expected identifier in declaration");
     decl.name = tok.val.s;
     tok = nextToken(ctx);
     if (tok.type != ':')
-        error(ctx, tok.pos, "expected colon in Declaration");
+        error(ctx, tok.pos, "expected colon in declaration");
     decl.pos = tok.pos;
 
     tok = peekToken(1, ctx);
@@ -98,7 +98,7 @@ parseDecl(Context *ctx, Scope *scope) {
     if (!(decl.value && decl.value->type == EXPR_FUNC)) {
         tok = nextToken(ctx);
         if (tok.type != ';')
-            error(ctx, tok.pos, "expected semicolon to end Declaration");
+            error(ctx, tok.pos, "expected semicolon to end declaration");
     }
 
     return decl;
@@ -124,23 +124,23 @@ parseSingularExpr(Context *ctx, Scope *scope) {
             func->header.pos = tok.pos;
             func->scope.parent = scope;
 
+	    tok = peekToken(1, ctx);
+	    if (tok.type == ')')
+		    nextToken(ctx);
             while (tok.type != ')') {
                 Declaration decl = {0};
                 tok = nextToken(ctx);
                 if (tok.type != TOK_IDENT)
-                    error(ctx, tok.pos,
-                          "expected parameter name");
+                    error(ctx, tok.pos, "expected parameter name");
                 decl.name = tok.val.s;
                 tok = nextToken(ctx);
                 if (tok.type != ':')
-                    error(ctx, tok.pos,
-                          "expected colon in parameter Declaration");
+                    error(ctx, tok.pos, "expected colon in parameter declaration");
                 decl.pos = tok.pos;
                 decl.type = parseType(ctx);
 
                 arrayAdd(&func->params, decl);
-                scopeAdd(&func->scope,
-                     &func->params.data[func->params.len - 1]);
+                scopeAdd(&func->scope, &func->params.data[func->params.len - 1]);
 
                 tok = nextToken(ctx);
                 if (tok.type == ',' && peekToken(1, ctx).type == ')') {
@@ -148,8 +148,7 @@ parseSingularExpr(Context *ctx, Scope *scope) {
                     break;
                 }
                 if (tok.type != ',' && tok.type != ')')
-                    error(ctx, tok.pos,
-                          "expected comma or closing parenthesis");
+                    error(ctx, tok.pos, "expected comma or closing parenthesis");
            }
 
             tok = peekToken(1, ctx);
@@ -473,7 +472,7 @@ parseStmt(Context *ctx, Scope *scope) {
         stmt->pos = declStmt->decl.pos;
 
         if (scopeGetNoParent(scope, declStmt->decl.name))
-            error(ctx, stmt->pos, "reDeclaration of %s", declStmt->decl.name.str);
+            error(ctx, stmt->pos, "redeclaration of %s", declStmt->decl.name.str);
         scopeAdd(scope, &declStmt->decl);
     } else {
         stmt = (StmtHeader *)allocExprStmt();
@@ -489,11 +488,15 @@ parseStmt(Context *ctx, Scope *scope) {
 
 void
 parse(Context *ctx) {
+    while (peekToken(1, ctx).type == ';')
+            nextToken(ctx);
     while (peekToken(1, ctx).type != TOK_EOF) {
         Declaration *decl = xMalloc(sizeof(*decl));
         *decl = parseDecl(ctx, &ctx->topScope);
         if (scopeGetNoParent(&ctx->topScope, decl->name))
             error(ctx, decl->pos, "redeclaration of %s", decl->name.str);
         scopeAdd(&ctx->topScope, decl);
+        while (peekToken(1, ctx).type == ';')
+                nextToken(ctx);
     }
 }
