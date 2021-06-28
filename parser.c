@@ -21,17 +21,16 @@ alloc##lower##Expr(void) \
     return expr; \
 }
 
-EXPR_ALLOC_FUNC(Int, INT);
-EXPR_ALLOC_FUNC(Float, FLOAT);
-EXPR_ALLOC_FUNC(Bool, BOOL);
-EXPR_ALLOC_FUNC(Char, CHAR);
-EXPR_ALLOC_FUNC(Str, STR);
-EXPR_ALLOC_FUNC(Member, MEMBER);
-EXPR_ALLOC_FUNC(Call, CALL);
-EXPR_ALLOC_FUNC(Ident, IDENT);
-EXPR_ALLOC_FUNC(Unop, UNOP);
-EXPR_ALLOC_FUNC(Binop, BINOP);
-EXPR_ALLOC_FUNC(Func, FUNC);
+EXPR_ALLOC_FUNC(Int, INT)
+EXPR_ALLOC_FUNC(Float, FLOAT)
+EXPR_ALLOC_FUNC(Bool, BOOL)
+EXPR_ALLOC_FUNC(Str, STR)
+EXPR_ALLOC_FUNC(Member, MEMBER)
+EXPR_ALLOC_FUNC(Call, CALL)
+EXPR_ALLOC_FUNC(Ident, IDENT)
+EXPR_ALLOC_FUNC(Unop, UNOP)
+EXPR_ALLOC_FUNC(Binop, BINOP)
+EXPR_ALLOC_FUNC(Func, FUNC)
 
 #define STMT_ALLOC_FUNC(lower, upper) \
 static lower##Stmt * \
@@ -43,12 +42,12 @@ alloc##lower##Stmt(void) \
     return stmt; \
 }
 
-STMT_ALLOC_FUNC(Expr, EXPR);
-STMT_ALLOC_FUNC(Return, RETURN);
-STMT_ALLOC_FUNC(If, IF);
-STMT_ALLOC_FUNC(While, WHILE);
-STMT_ALLOC_FUNC(Block, BLOCK);
-STMT_ALLOC_FUNC(Decl, DECL);
+STMT_ALLOC_FUNC(Expr, EXPR)
+STMT_ALLOC_FUNC(Return, RETURN)
+STMT_ALLOC_FUNC(If, IF)
+STMT_ALLOC_FUNC(While, WHILE)
+STMT_ALLOC_FUNC(Block, BLOCK)
+STMT_ALLOC_FUNC(Decl, DECL)
 
 static DataType
 parseType(Context *ctx) {
@@ -56,17 +55,45 @@ parseType(Context *ctx) {
     Token tok = nextToken(ctx);
 
     switch (tok.type) {
-    case TOK_U8: type.kind = TYPE_UINT; type.width = 8; break;
-    case TOK_U16: type.kind = TYPE_UINT; type.width = 16; break;
-    case TOK_U32: type.kind = TYPE_UINT; type.width = 32; break;
-    case TOK_U64: type.kind = TYPE_UINT; type.width = 64; break;
-    case TOK_I8: type.kind = TYPE_INT; type.width = 8; break;
-    case TOK_I16: type.kind = TYPE_INT; type.width = 16; break;
-    case TOK_I32: type.kind = TYPE_INT; type.width = 32; break;
-    case TOK_I64: type.kind = TYPE_INT; type.width = 64; break;
-    case TOK_F32: type.kind = TYPE_FLOAT; type.width = 32; break;
-    case TOK_F64: type.kind = TYPE_FLOAT; type.width = 64; break;
-    case TOK_CHAR_TYPE: type.kind = TYPE_CHAR; break;
+    case TOK_I8:
+        type.isSigned = 1;
+        /* fallthrough */
+    case TOK_U8:
+        type.kind = TYPE_INT;
+        type.width = 8;
+        break;
+    case TOK_I16:
+        type.isSigned = 1;
+        /* fallthrough */
+    case TOK_U16:
+        type.kind = TYPE_INT;
+        type.width = 16;
+        break;
+    case TOK_I32:
+        type.isSigned = 1;
+        /* fallthrough */
+    case TOK_U32:
+        type.kind = TYPE_INT;
+        type.width = 32;
+        break;
+    case TOK_I64:
+        type.isSigned = 1;
+        /* fallthrough */
+    case TOK_U64:
+        type.kind = TYPE_INT;
+        type.width = 64;
+        break;
+    case TOK_F32:
+        type.kind = TYPE_FLOAT;
+        type.width = 32;
+        break;
+    case TOK_F64:
+        type.kind = TYPE_FLOAT;
+        type.width = 64;
+        break;
+    case TOK_BOOL_TYPE:
+        type.kind = TYPE_BOOL;
+        break;
     default: error(ctx, tok.pos, "expected type");
     }
 
@@ -183,8 +210,7 @@ parseSingularExpr(Context *ctx, Scope *scope) {
     } break;
     HANDLE_TOKEN(TOK_INT, IntExpr, tok.val.i)
     HANDLE_TOKEN(TOK_FLOAT, FloatExpr, tok.val.f)
-    HANDLE_TOKEN(TOK_BOOL, BoolExpr, (unsigned int)tok.val.i)
-    HANDLE_TOKEN(TOK_CHAR, CharExpr, (unsigned int)tok.val.i)
+    HANDLE_TOKEN(TOK_BOOL, BoolExpr, (unsigned char)tok.val.i)
     HANDLE_TOKEN(TOK_STR, StrExpr, tok.val.s)
     HANDLE_TOKEN(TOK_IDENT, IdentExpr, tok.val.s)
     default:
@@ -493,6 +519,8 @@ parse(Context *ctx) {
     while (peekToken(1, ctx).type != TOK_EOF) {
         Declaration *decl = xMalloc(sizeof(*decl));
         *decl = parseDecl(ctx, &ctx->topScope);
+        if (!decl->value)
+            error(ctx, decl->pos, "top-level declaration must have a value");
         if (scopeGetNoParent(&ctx->topScope, decl->name))
             error(ctx, decl->pos, "redeclaration of %s", decl->name.str);
         scopeAdd(&ctx->topScope, decl);

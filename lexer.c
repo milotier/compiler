@@ -165,7 +165,6 @@ getCodePoint(Context *ctx) {
     if (c == EOF)
         error(ctx, ctx->srcIndex, "unexpected EOF in character literal");
     if (uc <= 0x7f) {
-        puts("1");
         return (unsigned long long)c;
     } else if ((uc & 0xe0) == 0xc0) {
         unsigned long long buf[2] = {uc & 0x1f};
@@ -304,7 +303,7 @@ nextLiteralToken(Context *ctx) {
         tok.val.s = readstring(ctx);
         return tok;
     case '\'':
-        tok.type = TOK_CHAR;
+        tok.type = TOK_INT;
         tok.val.i = getCodePoint(ctx);
         return tok;
     }
@@ -349,8 +348,8 @@ nextLiteralToken(Context *ctx) {
             tok.type = TOK_F32;
         } else if (strcmp(buf.data, "f64") == 0) {
             tok.type = TOK_F64;
-        } else if (strcmp(buf.data, "char") == 0) {
-            tok.type = TOK_CHAR_TYPE;
+        } else if (strcmp(buf.data, "bool") == 0) {
+            tok.type = TOK_BOOL_TYPE;
         } else if (strcmp(buf.data, "if") == 0) {
             tok.type = TOK_IF;
         } else if (strcmp(buf.data, "else") == 0) {

@@ -10,6 +10,8 @@ void *xMalloc(size_t);
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define LEN(a) (sizeof(a) / sizeof((a)[0]))
 
+#define I64_MAX ((1llu << 63) - 1)
+
 #if defined(__GNUC__) || defined(__clang__)
 # define NORETURN __attribute__((noreturn))
 #else
@@ -18,7 +20,7 @@ void *xMalloc(size_t);
 
 #define array_type(T) struct { T *data; unsigned int len, cap; }
 #define arrayAdd(a, v) ( \
-    ((a)->len == (a)->cap) ? ( \
+    ((a)->len == (a)->cap) ? (void)( \
         (a)->cap = MAX((a)->cap * 2, 4), \
         (a)->data = xRealloc((a)->data, sizeof(*(a)->data) * (a)->cap) \
     ) : (void)0, \
@@ -56,21 +58,21 @@ typedef struct {
 enum {
     TYPE_INFERRED,
     TYPE_VOID,
-    TYPE_ANY_INT,
     TYPE_INT,
-    TYPE_UINT,
     TYPE_FLOAT,
-    TYPE_CHAR,
+    TYPE_BOOL,
 };
 typedef struct {
-    unsigned char kind, width;
+    unsigned char kind;
+    unsigned char isSigned: 1;
+    unsigned char isFromLiteral: 1;
+    unsigned char width;
 } DataType;
 
 enum {
     EXPR_INT,
     EXPR_FLOAT,
     EXPR_BOOL,
-    EXPR_CHAR,
     EXPR_STR,
     EXPR_IDENT,
     EXPR_MEMBER,
@@ -82,6 +84,7 @@ enum {
 typedef struct {
     unsigned int pos;
     unsigned short type, isParenthesized;
+    DataType dataType;
 } ExprHeader;
 
 enum {
@@ -123,18 +126,13 @@ typedef struct {
 
 typedef struct {
     ExprHeader header;
-    unsigned int value;
+    unsigned char value;
 } BoolExpr;
 
 typedef struct {
     ExprHeader header;
     double value;
 } FloatExpr;
-
-typedef struct {
-    ExprHeader header;
-    unsigned int value;
-} CharExpr;
 
 typedef struct {
     ExprHeader header;
@@ -174,15 +172,29 @@ typedef struct {
 
 enum {
     BINOP_ADD,
+    BINOP_FIRST_NON_ASS = BINOP_ADD,
+    BINOP_FIRST_ARITH = BINOP_ADD,
     BINOP_SUB,
     BINOP_MUL,
     BINOP_DIV,
     BINOP_MOD,
+    BINOP_LAST_ARITH = BINOP_MOD,
     BINOP_LSHIFT,
+    BINOP_FIRST_BINARY = BINOP_LSHIFT,
     BINOP_RSHIFT,
     BINOP_BITAND,
     BINOP_BITOR,
     BINOP_BITXOR,
+    BINOP_LAST_BINARY = BINOP_BITXOR,
+    BINOP_AND,
+    BINOP_OR,
+    BINOP_EQ,
+    BINOP_NEQ,
+    BINOP_LT,
+    BINOP_LTE,
+    BINOP_GT,
+    BINOP_GTE,
+    BINOP_LAST_NON_ASS = BINOP_GTE,
 
     BINOP_ADD_ASS,
     BINOP_SUB_ASS,
@@ -194,18 +206,7 @@ enum {
     BINOP_BITAND_ASS,
     BINOP_BITOR_ASS,
     BINOP_BITXOR_ASS,
-
     BINOP_ASSIGN,
-
-    BINOP_AND,
-    BINOP_OR,
-
-    BINOP_EQ,
-    BINOP_NEQ,
-    BINOP_LT,
-    BINOP_LTE,
-    BINOP_GT,
-    BINOP_GTE,
 
     BINOP_INDEX,
 };
@@ -249,7 +250,6 @@ enum {
     TOK_IDENT,
     FIRST_LIT_TOK = TOK_IDENT,
     TOK_STR,
-    TOK_CHAR,
     TOK_INT,
     TOK_FLOAT,
     TOK_BOOL,
@@ -287,7 +287,7 @@ enum {
     TOK_I64,
     TOK_F32,
     TOK_F64,
-    TOK_CHAR_TYPE,
+    TOK_BOOL_TYPE,
 
     TOK_IF,
     TOK_ELSE,

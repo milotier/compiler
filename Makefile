@@ -1,6 +1,6 @@
-SRC=compiler.c common.c lexer.c parser.c
+SRC=compiler.c common.c lexer.c parser.c typer.c
 OBJ=$(SRC:.c=.o)
-CFLAGS=-Wall -Wextra -Wshadow -Wconversion -Wimplicit
+CFLAGS=-Wall -Wextra -Wshadow -Wconversion -Wimplicit -std=c99 -pedantic
 OUT=compiler
 
 .PHONY: clean

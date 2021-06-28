@@ -1,4 +1,4 @@
-func :: (foo: u32, bar: char) {
+func :: (foo: u32, bar: i32) {
     if foo {
         foo(
             bar + 10,
@@ -17,4 +17,6 @@ func :: (foo: u32, bar: char) {
 
     var : u32 = bar + baz;
 }
-foo :: () { return 10; };
+int : u8 : 10 ^ 20;
+float : f32 : 10.0 + 20.0;
+boolean : bool : true;

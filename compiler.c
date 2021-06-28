@@ -12,6 +12,8 @@
  * - lexer.c: the implementation file of the lexer.
  * - parser.h: the header file for the parser.
  * - parser.c: the implementation file of the parser.
+ * - typer.h: the header file for the type checker.
+ * - typer.c: the implementation file of the type checker.
  */
 #include <fcntl.h>
 #include <locale.h>
@@ -22,6 +24,7 @@
 
 #include "common.h"
 #include "parser.h"
+#include "typer.h"
 
 /* function implementations */
 static void
@@ -74,10 +77,5 @@ main(int argc, char *argv[]) {
     }
 
     parse(&ctx);
-    for (i = 0; (unsigned int)i < ctx.topScope.value.tbl.cap; i++) {
-        if (ctx.topScope.value.tbl.entries[i].sym.str) {
-            printDecl((Declaration *)ctx.topScope.value.tbl.entries[i].val);
-            putchar('\n');
-        }
-    }
+    checkTypes(&ctx);
 }
