@@ -155,7 +155,7 @@ typedef struct {
 
 typedef struct {
     ExprHeader header;
-    Scope funcScope;
+    Scope scope;
     array_type(Declaration) params;
     array_type(StmtHeader *) statements;
     DataType returnType;
@@ -235,7 +235,7 @@ typedef struct {
 typedef struct {
     StmtHeader header;
     array_type(StmtHeader *) statements;
-    Scope blockScope;
+    Scope scope;
 } BlockStmt;
 
 typedef struct {

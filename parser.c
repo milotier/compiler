@@ -122,7 +122,7 @@ parseSingularExpr(Context *ctx, Scope *scope) {
             peekToken(1, ctx).type == ')') {
             FuncExpr *func = allocFuncExpr();
             func->header.pos = tok.pos;
-            func->funcScope.parent = scope;
+            func->scope.parent = scope;
 
             while (tok.type != ')') {
                 Declaration decl = {0};
@@ -139,7 +139,7 @@ parseSingularExpr(Context *ctx, Scope *scope) {
                 decl.type = parseType(ctx);
 
                 arrayAdd(&func->params, decl);
-                scopeAdd(&func->funcScope,
+                scopeAdd(&func->scope,
                      &func->params.data[func->params.len - 1]);
 
                 tok = nextToken(ctx);
@@ -164,7 +164,7 @@ parseSingularExpr(Context *ctx, Scope *scope) {
             }
 
             while (peekToken(1, ctx).type != '}') {
-                StmtHeader *stmt = parseStmt(ctx, &func->funcScope);
+                StmtHeader *stmt = parseStmt(ctx, &func->scope);
                 if (stmt)
                     arrayAdd(&func->statements, stmt);
             }
@@ -458,9 +458,9 @@ parseStmt(Context *ctx, Scope *scope) {
         stmt = (StmtHeader *)allocBlockStmt();
         blockStmt = (BlockStmt *)stmt;
         stmt->pos = tok.pos;
-        blockStmt->blockScope.parent = scope;
+        blockStmt->scope.parent = scope;
         while (peekToken(1, ctx).type != '}') {
-            StmtHeader *childStmt = parseStmt(ctx, &blockStmt->blockScope);
+            StmtHeader *childStmt = parseStmt(ctx, &blockStmt->scope);
             if (childStmt)
                 arrayAdd(&((BlockStmt *)stmt)->statements,childStmt);
         }
