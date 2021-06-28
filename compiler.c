@@ -13,14 +13,9 @@
  * - parser.h: the header file for the parser.
  * - parser.c: the implementation file of the parser.
  */
-#include <ctype.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <locale.h>
-#include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
