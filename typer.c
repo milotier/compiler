@@ -4,8 +4,22 @@
 #include "common.h"
 #include "typer.h"
 
+typedef ArrayType(Declaration *) DeclList;
+
+static void checkDecl(
+    Declaration *decl,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+);
+
 static DataType *
-getExprDataType(ExprHeader *expr, Context *ctx) {
+getExprDataType(
+    ExprHeader *expr,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+) {
     DataType type = {0};
     switch (expr->type) {
     case EXPR_INT:
@@ -30,11 +44,11 @@ getExprDataType(ExprHeader *expr, Context *ctx) {
         if (binop->type >= BINOP_FIRST_NON_ASS &&
             binop->type <= BINOP_LAST_NON_ASS)
         {
-            DataType *leftType = getExprDataType(binop->left, ctx);
-            DataType *rightType = getExprDataType(binop->right, ctx);
+            DataType *leftType = getExprDataType(binop->left, ctx, scope, visitedDecls);
+            DataType *rightType = getExprDataType(binop->right, ctx, scope, visitedDecls);
             if (leftType->kind != rightType->kind)
                 error(ctx, expr->pos,
-                      "can only add values of the same type family");
+                      "infix operators used on values in different type families");
             if (leftType->kind == TYPE_INT) {
                 type.kind = TYPE_INT;
 
@@ -50,12 +64,12 @@ getExprDataType(ExprHeader *expr, Context *ctx) {
 
                 if (leftType->isSigned != rightType->isSigned)
                     error(ctx, expr->pos,
-                          "can not add integers of different signs");
+                          "infix used operators on integers of different signs");
                 type.isSigned = leftType->isSigned;
 
                 if (leftType->width != rightType->width)
                     error(ctx, expr->pos,
-                          "can not add integers of different widths");
+                          "infix operators used on integers of different widths");
                 type.width = leftType->width;
             } else if (leftType->kind == TYPE_FLOAT) {
                 type.kind = TYPE_FLOAT;
@@ -64,7 +78,7 @@ getExprDataType(ExprHeader *expr, Context *ctx) {
                     binop->type <= BINOP_LAST_BINARY)
                 {
                     error(ctx, expr->pos,
-                          "floating-point numbers can not be used in bitwise operators");
+                          "floating-point numbers used in bitwise operator");
                 }
 
                 if (leftType->isFromLiteral)
@@ -75,7 +89,7 @@ getExprDataType(ExprHeader *expr, Context *ctx) {
                     type.isFromLiteral = 1;
                 if (leftType->width != rightType->width)
                     error(ctx, expr->pos,
-                          "can not add floating-point numbers of different widths");
+                          "infix used operator on floating-point numbers of different widths");
                 type.width = leftType->width;
             } else {
                 error(ctx, expr->pos,
@@ -84,34 +98,68 @@ getExprDataType(ExprHeader *expr, Context *ctx) {
         }
     } break;
 
-    case EXPR_IDENT: /*TODO*/ break;
+    case EXPR_IDENT: {
+        Declaration *decl = scopeGet(scope, ((IdentExpr *)expr)->value);
+        unsigned int i;
+        if (!decl)
+            error(ctx, expr->pos, "undeclared identifier");
+        for (i = 0; i < visitedDecls->len; i++)
+            if (visitedDecls->data[i] == decl)
+                error(ctx, decl->pos, "recursive declaration");
+        arrayAdd(visitedDecls, decl);
+
+        if (decl->type.kind == TYPE_INFERRED) {
+            if (scope != &ctx->topScope)
+                error(ctx, expr->pos, "undeclared identifier");
+            checkDecl(decl, ctx, scope, visitedDecls);
+        }
+
+        type = decl->type;
+    } break;
     }
 
     expr->dataType = type;
     return &expr->dataType;
 }
 
+static void
+checkDecl(
+    Declaration *decl,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+) {
+    DataType *valueType = getExprDataType(decl->value, ctx, scope, visitedDecls);
+
+    if (decl->type.kind == TYPE_INFERRED)
+        decl->type = *valueType;
+
+    if (decl->type.kind != valueType->kind)
+        error(ctx, decl->pos, "assigned value does not match type");
+    if (decl->type.kind == TYPE_INT || decl->type.kind == TYPE_FLOAT) {
+        if (!valueType->isFromLiteral && decl->type.width < valueType->width)
+            error(ctx, decl->pos,
+                  "width of assigned value does not match type");
+        if (!valueType->isFromLiteral &&
+            decl->type.isSigned != valueType->isSigned)
+        {
+            error(ctx, decl->pos,
+                  "sign of assigned value does not match type");
+        }
+    }
+
+    decl->type.isFromLiteral = 0;
+}
+
 void
 checkTypes(Context *ctx) {
     unsigned int i;
-    for (i = 0; (unsigned int)i < ctx->topScope.value.tbl.cap; i++) {
+    for (i = 0; i < ctx->topScope.value.tbl.cap; i++) {
         if (ctx->topScope.value.tbl.entries[i].sym.str) {
             Declaration *decl = ctx->topScope.value.tbl.entries[i].val;
-            DataType *valueType = getExprDataType(decl->value, ctx);
-
-            if (decl->type.kind == TYPE_INFERRED)
-                decl->type = *valueType;
-
-            if (decl->type.kind != valueType->kind)
-                error(ctx, decl->pos, "assigned value does not match type");
-            if (decl->type.kind == TYPE_INT || decl->type.kind == TYPE_FLOAT) {
-                if (!valueType->isFromLiteral && decl->type.width < valueType->width)
-                    error(ctx, decl->pos,
-                          "width of assigned value does not match type");
-                if (!valueType->isFromLiteral && decl->type.isSigned != valueType->isSigned)
-                    error(ctx, decl->pos,
-                          "sign of assigned value does not match type");
-            }
+            DeclList visitedDecls = {0};
+            arrayAdd(&visitedDecls, decl);
+            checkDecl(decl, ctx, &ctx->topScope, &visitedDecls);
         }
     }
 }

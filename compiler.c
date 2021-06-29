@@ -78,4 +78,12 @@ main(int argc, char *argv[]) {
 
     parse(&ctx);
     checkTypes(&ctx);
+
+    for (i = 0; (unsigned int)i < ctx.topScope.value.tbl.cap; i++) {
+        if (ctx.topScope.value.tbl.entries[i].sym.str) {
+            printf("%s: ", ctx.topScope.value.tbl.entries[i].sym.str);
+            printType(((Declaration *)ctx.topScope.value.tbl.entries[i].val)->type);
+            putchar('\n');
+        }
+    }
 }

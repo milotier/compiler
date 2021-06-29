@@ -18,7 +18,7 @@ void *xMalloc(size_t);
 # define NORETURN
 #endif
 
-#define array_type(T) struct { T *data; unsigned int len, cap; }
+#define ArrayType(T) struct { T *data; unsigned int len, cap; }
 #define arrayAdd(a, v) ( \
     ((a)->len == (a)->cap) ? (void)( \
         (a)->cap = MAX((a)->cap * 2, 4), \
@@ -114,7 +114,7 @@ struct scope {
     Scope *parent;
     /* The top-level Scope uses a Table, all others use an array */
     union {
-        array_type(Declaration *) arr;
+        ArrayType(Declaration *) arr;
         Table tbl;
     } value;
 };
@@ -148,14 +148,14 @@ typedef struct {
 typedef struct {
     ExprHeader header;
     ExprHeader *func;
-    array_type(ExprHeader *) args;
+    ArrayType(ExprHeader *) args;
 } CallExpr;
 
 typedef struct {
     ExprHeader header;
     Scope scope;
-    array_type(Declaration) params;
-    array_type(StmtHeader *) statements;
+    ArrayType(Declaration) params;
+    ArrayType(StmtHeader *) statements;
     DataType returnType;
 } FuncExpr;
 
@@ -235,7 +235,7 @@ typedef struct {
 
 typedef struct {
     StmtHeader header;
-    array_type(StmtHeader *) statements;
+    ArrayType(StmtHeader *) statements;
     Scope scope;
 } BlockStmt;
 
@@ -316,7 +316,7 @@ typedef struct {
 
     /* Used only by the lexer */
     unsigned int srcIndex;
-    array_type(Token) cachedTokens;
+    ArrayType(Token) cachedTokens;
 } Context;
 
 /* variables */

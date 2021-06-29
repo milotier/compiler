@@ -341,7 +341,6 @@ printToken(Token tok) {
     case TOK_EOF: printf("EOF"); break;
     case TOK_IDENT: printf("%s", tok.val.s.str); break;
     case TOK_STR: printf("\"%s\"", tok.val.s.str); break;
-    case TOK_CHAR: printf("'%lc'", (wint_t)tok.val.i); break;
     case TOK_INT: printf("%llu", tok.val.i); break;
     case TOK_FLOAT: printf("%f", tok.val.f); break;
     case TOK_BOOL: printf("%s", tok.val.i ? "true" : "false"); break;
@@ -371,10 +370,9 @@ printToken(Token tok) {
 void
 printType(DataType type) {
     switch (type.kind) {
-    case TYPE_UINT: printf("u%hhu", type.width); break;
-    case TYPE_INT: printf("i%hhu", type.width); break;
+    case TYPE_INT: printf("%c%hhu", type.isSigned ? 'i' : 'u', type.width); break;
     case TYPE_FLOAT: printf("f%hhu", type.width); break;
-    case TYPE_CHAR: printf("char"); break;
+    case TYPE_BOOL: printf("bool"); break;
     }
 }
 
@@ -384,7 +382,6 @@ printExpr(ExprHeader *expr) {
     case EXPR_INT: printf("%llu", ((IntExpr *)expr)->value); break;
     case EXPR_FLOAT: printf("%f", ((FloatExpr *)expr)->value); break;
     case EXPR_BOOL: printf("%s", ((BoolExpr *)expr)->value ? "true" : "false"); break;
-    case EXPR_CHAR: printf("'%lc'", (wint_t)((CharExpr *)expr)->value); break;
     case EXPR_STR: printf("\"%s\"", ((StrExpr *)expr)->value.str); break;
     case EXPR_IDENT: printf("%s", ((IdentExpr *)expr)->value.str); break;
     case EXPR_MEMBER: {

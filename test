@@ -17,6 +17,9 @@ func :: (foo: u32, bar: i32) {
 
     var : u32 = bar + baz;
 }
-int : u8 : 10 ^ 20;
-float : f32 : 10.0 + 20.0;
-boolean : bool : true;
+
+INT2 :: INT + 1;
+INT :: 10 ^ 20;
+
+FLOAT :: 10.0 + 20.0;
+BOOL :: true;
