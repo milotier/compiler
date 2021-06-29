@@ -52,6 +52,13 @@ getExprDataType(
             if (leftType->kind == TYPE_INT) {
                 type.kind = TYPE_INT;
 
+                if (binop->type >= BINOP_FIRST_LOG &&
+                    binop->type <= BINOP_LAST_LOG)
+                {
+                    error(ctx, expr->pos,
+                          "integers used in logical operator");
+                }
+
                 if (leftType->isFromLiteral) {
                     leftType->width = rightType->width;
                     leftType->isSigned = rightType->isSigned;
@@ -80,6 +87,12 @@ getExprDataType(
                     error(ctx, expr->pos,
                           "floating-point numbers used in bitwise operator");
                 }
+                if (binop->type >= BINOP_FIRST_LOG &&
+                    binop->type <= BINOP_LAST_LOG)
+                {
+                    error(ctx, expr->pos,
+                          "floating-point numbers used in logical operator");
+                }
 
                 if (leftType->isFromLiteral)
                     leftType->width = rightType->width;
@@ -89,11 +102,29 @@ getExprDataType(
                     type.isFromLiteral = 1;
                 if (leftType->width != rightType->width)
                     error(ctx, expr->pos,
-                          "infix used operator on floating-point numbers of different widths");
+                          "infix operator used on floating-point numbers of different widths");
                 type.width = leftType->width;
+            } else if (leftType->kind == TYPE_BOOL) {
+                type.kind = TYPE_BOOL;
+                if (binop->type >= BINOP_FIRST_ARITH &&
+                     binop->type <= BINOP_LAST_ARITH)
+                {
+                    error(ctx, expr->pos, "booleans used in arithmetic operator");
+                }
+                if (binop->type >= BINOP_FIRST_BINARY &&
+                     binop->type <= BINOP_LAST_BINARY)
+                {
+                    error(ctx, expr->pos, "booleans used in bitwise operator");
+                }
             } else {
                 error(ctx, expr->pos,
                       "invalid type for arithmetic infix operator");
+            }
+
+            if (binop->type >= BINOP_FIRST_CMP &&
+                binop->type <= BINOP_LAST_CMP)
+            {
+                type.kind = TYPE_BOOL;
             }
         }
     } break;
@@ -138,14 +169,9 @@ checkDecl(
         error(ctx, decl->pos, "assigned value does not match type");
     if (decl->type.kind == TYPE_INT || decl->type.kind == TYPE_FLOAT) {
         if (!valueType->isFromLiteral && decl->type.width < valueType->width)
-            error(ctx, decl->pos,
-                  "width of assigned value does not match type");
-        if (!valueType->isFromLiteral &&
-            decl->type.isSigned != valueType->isSigned)
-        {
-            error(ctx, decl->pos,
-                  "sign of assigned value does not match type");
-        }
+            error(ctx, decl->pos, "width of assigned value does not match type");
+        if (!valueType->isFromLiteral && decl->type.isSigned != valueType->isSigned)
+            error(ctx, decl->pos, "sign of assigned value does not match type");
     }
 
     decl->type.isFromLiteral = 0;

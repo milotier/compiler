@@ -21,5 +21,5 @@ func :: (foo: u32, bar: i32) {
 INT2 :: INT + 1;
 INT :: 10 ^ 20;
 
-FLOAT :: 10.0 + 20.0;
-BOOL :: true;
+FLOAT :: 10.0 * 20.0;
+BOOL :: true && false;
