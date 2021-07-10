@@ -28,7 +28,7 @@ ungetChar(Context *ctx) {
 }
 
 static char
-CheckForAssign(char type, char assignType, Context *ctx) {
+checkForAssign(char type, char assignType, Context *ctx) {
     int c = getChar(ctx);
     if (c == '=')
         return assignType;
@@ -41,7 +41,7 @@ readNumber(int c, Context *ctx) {
     String buf = {0};
     int isFloat = 0;
     int radix = 10;
-    Token tok;
+    Token tok = {0};
 
     if (c == '0') {
         int next = getChar(ctx);
@@ -79,11 +79,28 @@ readNumber(int c, Context *ctx) {
     ungetChar(ctx);
 
     if (isFloat) {
-        tok.type = TOK_FLOAT;
         tok.val.f = strtod(buf.data, NULL);
+        tok.type = TOK_FLOAT;
     } else {
+        BigInt base = bigIntFromI64(radix);
+        unsigned char lookup[128] = {0};
+        unsigned char i;
+
+        for (i = 0; i < 10; i++)
+            lookup['0' + i] = i;
+        for (i = 0; i < 6; i++)
+            lookup['a' + i] = 10 + i;
+
+        for (i = 0; i < buf.len; i++) {
+            BigInt val = bigIntFromU64(lookup[(unsigned char)buf.data[i]]);
+            bigIntMul(&tok.val.bi, &tok.val.bi, &base);
+            bigIntAdd(&tok.val.bi, &tok.val.bi, &val);
+            bigIntFree(&val);
+        }
+
         tok.type = TOK_INT;
-        tok.val.i = strtoull(buf.data, NULL, radix);
+
+        bigIntFree(&base);
     }
 
     stringFree(&buf);
@@ -92,7 +109,7 @@ readNumber(int c, Context *ctx) {
 }
 
 static unsigned char
-HexToInt(char c) {
+hexToInt(char c) {
     if (isdigit(c))
         return (unsigned char)(c - '0');
     return (unsigned char)(c - 'a' + 10);
@@ -122,11 +139,11 @@ getEscape(Context *ctx) {
         c = getChar(ctx);
         if (!isxdigit(c))
             error(ctx, backslashPos, "expected two hex digits after \\x escape");
-        val = (unsigned char)(val * 16) + HexToInt((char)c);
+        val = (unsigned char)(val * 16) + hexToInt((char)c);
         c = getChar(ctx);
         if (!isxdigit(c))
             error(ctx, backslashPos, "expected two hex digits after \\x escape");
-        val = (unsigned char)(val * 16) + HexToInt((char)c);
+        val = (unsigned char)(val * 16) + hexToInt((char)c);
 
         c = (char)val;
         break;
@@ -215,28 +232,32 @@ nextLiteralToken(Context *ctx) {
     /* TODO: make this... thing cleaner */
     while (c == '\n' || c == '\r' || c == ' ' || c == '\t' || c == '/') {
         if (c == '/') {
-            c = getChar(ctx);
-            if (c == '*') {
+            int next = getChar(ctx);
+            if (next == '*') {
                 unsigned int nesting = 1;
-                c = getChar(ctx);
+                next = getChar(ctx);
                 for (;;) {
-                    c = getChar(ctx);
-                    if (c == '*') {
-                        c = getChar(ctx);
-                        if (c == '/') {
+                    next = getChar(ctx);
+                    if (next == '*') {
+                        next = getChar(ctx);
+                        if (next == '/') {
                             nesting--;
-                            if (!nesting)
+                            if (!nesting) {
+                                c = getChar(ctx);
                                 break;
+                            }
                         }
-                    } else if (c == '/') {
-                        c = getChar(ctx);
-                        if (c == '*')
+                    } else if (next == '/') {
+                        next = getChar(ctx);
+                        if (next == '*')
                             nesting++;
                     }
                 }
-            } else if (c == '/') {
-                while (c != '\n')
-                    c = getChar(ctx);
+            } else if (next == '/') {
+                while (next != '\n')
+                    next = getChar(ctx);
+            } else {
+                break;
             }
         }
         c = getChar(ctx);
@@ -245,28 +266,28 @@ nextLiteralToken(Context *ctx) {
 
     switch (c) {
     case EOF: tok.type = TOK_EOF; return tok;
-    case '=': tok.type = CheckForAssign('=', TOK_EQ, ctx); return tok;
-    case '!': tok.type = CheckForAssign('!', TOK_NEQ, ctx); return tok;
+    case '=': tok.type = checkForAssign('=', TOK_EQ, ctx); return tok;
+    case '!': tok.type = checkForAssign('!', TOK_NEQ, ctx); return tok;
     case '.': tok.type = '.'; return tok;
     case '>':
         c = getChar(ctx);
         if (c == '>') {
-            tok.type = CheckForAssign(TOK_RSHIFT, TOK_RSHIFT_ASS, ctx);
+            tok.type = checkForAssign(TOK_RSHIFT, TOK_RSHIFT_ASS, ctx);
             return tok;
         }
         ungetChar(ctx);
-        tok.type = CheckForAssign('>', TOK_GTE, ctx);
+        tok.type = checkForAssign('>', TOK_GTE, ctx);
         return tok;
     case '<':
         c = getChar(ctx);
         if (c == '<') {
-            tok.type = CheckForAssign(TOK_LSHIFT, TOK_LSHIFT_ASS, ctx);
+            tok.type = checkForAssign(TOK_LSHIFT, TOK_LSHIFT_ASS, ctx);
             return tok;
         }
         ungetChar(ctx);
-        tok.type = CheckForAssign('<', TOK_LTE, ctx);
+        tok.type = checkForAssign('<', TOK_LTE, ctx);
         return tok;
-    case '+': tok.type = CheckForAssign('+', TOK_ADD_ASS, ctx); return tok;
+    case '+': tok.type = checkForAssign('+', TOK_ADD_ASS, ctx); return tok;
     case '-':
         c = getChar(ctx);
         if (c == '>') {
@@ -274,12 +295,12 @@ nextLiteralToken(Context *ctx) {
             return tok;
         }
         ungetChar(ctx);
-        tok.type = CheckForAssign('-', TOK_SUB_ASS, ctx);
+        tok.type = checkForAssign('-', TOK_SUB_ASS, ctx);
         return tok;
-    case '*': tok.type = CheckForAssign('*', TOK_MUL_ASS, ctx); return tok;
-    case '/': tok.type = CheckForAssign('/', TOK_DIV_ASS, ctx); return tok;
-    case '%': tok.type = CheckForAssign('%', TOK_MOD_ASS, ctx); return tok;
-    case '^': tok.type = CheckForAssign('^', TOK_BITXOR_ASS, ctx); return tok;
+    case '*': tok.type = checkForAssign('*', TOK_MUL_ASS, ctx); return tok;
+    case '/': tok.type = checkForAssign('/', TOK_DIV_ASS, ctx); return tok;
+    case '%': tok.type = checkForAssign('%', TOK_MOD_ASS, ctx); return tok;
+    case '^': tok.type = checkForAssign('^', TOK_BITXOR_ASS, ctx); return tok;
     case '&':
         c = getChar(ctx);
         if (c == '&') {
@@ -287,7 +308,7 @@ nextLiteralToken(Context *ctx) {
             return tok;
         }
         ungetChar(ctx);
-        tok.type = CheckForAssign('&', TOK_BITAND_ASS, ctx);
+        tok.type = checkForAssign('&', TOK_BITAND_ASS, ctx);
         return tok;
     case '|':
         c = getChar(ctx);
@@ -296,7 +317,7 @@ nextLiteralToken(Context *ctx) {
             return tok;
         }
         ungetChar(ctx);
-        tok.type = CheckForAssign('|', TOK_BITOR_ASS, ctx);
+        tok.type = checkForAssign('|', TOK_BITOR_ASS, ctx);
         return tok;
     case '"':
         tok.type = TOK_STR;
@@ -304,7 +325,7 @@ nextLiteralToken(Context *ctx) {
         return tok;
     case '\'':
         tok.type = TOK_INT;
-        tok.val.i = getCodePoint(ctx);
+        tok.val.bi = bigIntFromU64(getCodePoint(ctx));
         return tok;
     }
 

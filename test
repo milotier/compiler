@@ -18,8 +18,14 @@ func :: (foo: u32, bar: i32) {
     var : u32 = bar + baz;
 }
 
-INT2 :: INT + 1;
-INT :: 10 ^ 20;
+BIG :: 0x0984238092572034;
+
+UINT2 : u8 : UINT;
+UINT : u8 : 255;
 
 FLOAT :: 10.0 * 20.0;
-BOOL :: true && false;
+BOOL :: true != false;
+
+NUM : u8 : 255;
+
+BIT :: (1 << 34) >> 18;

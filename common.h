@@ -6,11 +6,16 @@
 void *xMalloc(size_t);
 
 /* macros */
+#define SWAP(T, x, y) do { T tmp = x; x = y; y = tmp; } while (0);
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define LEN(a) (sizeof(a) / sizeof((a)[0]))
 
-#define I64_MAX ((1llu << 63) - 1)
+#define U64_MAX (~0llu)
+
+#define I32_MAX ((1l << 31) - 1)
+#define I64_MAX ((1ll << 63) - 1)
+#define I64_MIN (-(1ll << 63))
 
 #if defined(__GNUC__) || defined(__clang__)
 # define NORETURN __attribute__((noreturn))
@@ -19,6 +24,19 @@ void *xMalloc(size_t);
 #endif
 
 #define ArrayType(T) struct { T *data; unsigned int len, cap; }
+#define arrayCopy(a, b) ( \
+    (b)->cap = (a)->cap, \
+    (b)->len = (a)->len, \
+    (b)->data = xMalloc(sizeof(*(a)->data) * (a)->cap), \
+    memcpy((b)->data, (a)->data, sizeof(*(a)->data) * (a)->len) \
+)
+#define arraySetLen(a, l) ( \
+    ((l) > (a)->cap) ? (void)( \
+        (a)->cap = MAX((a)->cap * 2, l), \
+        (a)->data = xRealloc((a)->data, sizeof(*(a)->data) * (a)->cap) \
+    ) : (void)0, \
+    (a)->len = (l) \
+)
 #define arrayAdd(a, v) ( \
     ((a)->len == (a)->cap) ? (void)( \
         (a)->cap = MAX((a)->cap * 2, 4), \
@@ -31,7 +49,12 @@ void *xMalloc(size_t);
     (a)->len--, \
     memmove((a)->data + i, (a)->data + i + 1, sizeof(*(a)->data) * ((a)->len - i)) \
 )
-
+#define arrayFree(a) ( \
+    free((a)->data), \
+    (a)->data = NULL, \
+    (a)->len = 0, \
+    (a)->cap = 0 \
+)
 
 /* types */
 
@@ -47,6 +70,11 @@ typedef struct {
 } String;
 
 typedef struct {
+    ArrayType(unsigned int) data;
+    int sign;
+} BigInt;
+
+typedef struct {
     struct {
         Symbol sym;
         void *val;
@@ -58,14 +86,15 @@ typedef struct {
 enum {
     TYPE_INFERRED,
     TYPE_VOID,
+    TYPE_COMPTIME_INT,
     TYPE_INT,
+    TYPE_COMPTIME_FLOAT,
     TYPE_FLOAT,
     TYPE_BOOL,
 };
 typedef struct {
     unsigned char kind;
     unsigned char isSigned: 1;
-    unsigned char isFromLiteral: 1;
     unsigned char width;
 } DataType;
 
@@ -74,12 +103,16 @@ enum {
     EXPR_FLOAT,
     EXPR_BOOL,
     EXPR_STR,
+    EXPR_FUNC,
+
+    EXPR_FIRST_LIT = EXPR_INT,
+    EXPR_LAST_LIT = EXPR_FUNC,
+
     EXPR_IDENT,
     EXPR_MEMBER,
     EXPR_CALL,
     EXPR_UNOP,
     EXPR_BINOP,
-    EXPR_FUNC,
 };
 typedef struct {
     unsigned int pos;
@@ -121,7 +154,7 @@ struct scope {
 
 typedef struct {
     ExprHeader header;
-    unsigned long long value;
+    BigInt value;
 } IntExpr;
 
 typedef struct {
@@ -305,6 +338,7 @@ enum {
 typedef struct {
     union {
         double f;
+        BigInt bi;
         unsigned long long i;
         Symbol s;
     } val;
@@ -332,24 +366,87 @@ extern char *argv0;
 NORETURN void die(char *, ...);
 NORETURN void error(Context *ctx, unsigned int, char *, ...);
 void warn(Context *ctx, unsigned int, char *, ...);
+
 void *xRealloc(void *, size_t);
+
 Symbol addSymbol(char *, unsigned int);
+
 void stringAddS(String *, char *);
 void stringAddC(String *, char);
 void stringFree(String *);
+
 void tableAdd(Table *, Symbol, void *);
 void *tableGet(Table *, Symbol);
 void tableRemove(Table *, Symbol, void (*)(void *));
 void tableClear(Table *, void (*)(void *));
 void tableFree(Table *, void (*)(void *));
+
 void scopeAdd(Scope *, Declaration *);
 Declaration *scopeGetNoParent(Scope *, Symbol);
 Declaration *scopeGet(Scope *, Symbol);
+
+BigInt bigIntFromU64(unsigned long long);
+BigInt bigIntFromI64(long long);
+BigInt bigIntCopy(BigInt *);
+void bigIntFree(BigInt *);
+void bigIntMove(BigInt *, BigInt);
+int bigIntCmp(BigInt *, BigInt *);
+int bigIntToU64(unsigned long long *out, BigInt *x);
+void bigIntAnd(BigInt *out, BigInt *x, BigInt *y);
+void bigIntOr(BigInt *out, BigInt *x, BigInt *y);
+void bigIntXor(BigInt *out, BigInt *x, BigInt *y);
+int bigIntLshift(BigInt *out, BigInt *x, BigInt *y);
+void bigIntRshift(BigInt *out, BigInt *x, BigInt *y);
+void bigIntAdd(BigInt *, BigInt *, BigInt *);
+void bigIntSub(BigInt *, BigInt *, BigInt *);
+void bigIntMul(BigInt *, BigInt *, BigInt *);
+int bigIntDiv(BigInt *, BigInt *, BigInt *, BigInt *);
+void bigIntPrint(BigInt *);
+
 /* Only used for debugging */
 void printToken(Token);
 void printType(DataType);
 void printExpr(ExprHeader *);
 void printDecl(Declaration *);
 void printStmt(StmtHeader *);
+
+/* Allocation functions */
+#define EXPR_ALLOC_FUNC(lower, upper) \
+static inline lower##Expr * \
+alloc##lower##Expr(void) \
+{ \
+    lower##Expr *expr = xMalloc(sizeof(*expr)); \
+    *expr = (lower##Expr) {0}; \
+    expr->header.type = EXPR_##upper; \
+    return expr; \
+}
+
+EXPR_ALLOC_FUNC(Int, INT)
+EXPR_ALLOC_FUNC(Float, FLOAT)
+EXPR_ALLOC_FUNC(Bool, BOOL)
+EXPR_ALLOC_FUNC(Str, STR)
+EXPR_ALLOC_FUNC(Member, MEMBER)
+EXPR_ALLOC_FUNC(Call, CALL)
+EXPR_ALLOC_FUNC(Ident, IDENT)
+EXPR_ALLOC_FUNC(Unop, UNOP)
+EXPR_ALLOC_FUNC(Binop, BINOP)
+EXPR_ALLOC_FUNC(Func, FUNC)
+
+#define STMT_ALLOC_FUNC(lower, upper) \
+static inline lower##Stmt * \
+alloc##lower##Stmt(void) \
+{ \
+    lower##Stmt *stmt = xMalloc(sizeof(*stmt)); \
+    *stmt = (lower##Stmt) {0}; \
+    stmt->header.type = STMT_##upper; \
+    return stmt; \
+}
+
+STMT_ALLOC_FUNC(Expr, EXPR)
+STMT_ALLOC_FUNC(Return, RETURN)
+STMT_ALLOC_FUNC(If, IF)
+STMT_ALLOC_FUNC(While, WHILE)
+STMT_ALLOC_FUNC(Block, BLOCK)
+STMT_ALLOC_FUNC(Decl, DECL)
 
 #endif /* COMMON_H */

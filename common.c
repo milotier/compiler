@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <unistd.h>
 #include <wchar.h>
 
@@ -11,6 +12,9 @@
 
 /* macros */
 #define SYMBUFLEN 1024
+
+#define CARRY_BIT 31u
+#define DIGIT_MASK (~((1u) << (CARRY_BIT)))
 
 /* variables */
 
@@ -210,6 +214,419 @@ stringFree(String *str) {
     *str = (String) {0};
 }
 
+BigInt
+bigIntFromU64(unsigned long long value) {
+    BigInt result = {0};
+
+    while (value) {
+        arrayAdd(&result.data, (unsigned int)(value & DIGIT_MASK));
+        value >>= CARRY_BIT;
+    }
+
+    return result;
+}
+
+BigInt
+bigIntFromI64(long long value) {
+    BigInt result = {0};
+
+    if (value < 0) {
+        result.sign = 1;
+        value = -value;
+    }
+    while (value) {
+        arrayAdd(&result.data, (unsigned int)(value & DIGIT_MASK));
+        value >>= CARRY_BIT;
+    }
+
+    return result;
+}
+
+int
+bigIntToU64(unsigned long long *out, BigInt *x) {
+    unsigned long long result = 0;
+    unsigned int i;
+
+    for (i = 0; i / CARRY_BIT < x->data.len; i++) {
+        unsigned int bitMask = 1u << (i % CARRY_BIT);
+        unsigned int bit = (x->data.data[i / CARRY_BIT] & bitMask) >> (i % CARRY_BIT);
+        if (i >= 64 && bit)
+            return 0;
+        result |= (unsigned long long)bit << i;
+    }
+
+    *out = result;
+    return 1;
+}
+
+BigInt
+bigIntCopy(BigInt *x) {
+    BigInt y;
+    y.sign = x->sign;
+    arrayCopy(&x->data, &y.data);
+    return y;
+}
+
+void
+bigIntFree(BigInt *x) {
+    arrayFree(&x->data);
+    x->sign = 0;
+}
+
+void
+bigIntMove(BigInt *dest, BigInt src) {
+    bigIntFree(dest);
+    *dest = src;
+}
+
+int
+bigIntCmp(BigInt *x, BigInt *y) {
+    unsigned int i;
+
+    if ((x->sign == 1 && y->sign == 0) || x->data.len < y->data.len)
+        return -1;
+    if ((x->sign == 0 && y->sign == 1) || x->data.len > y->data.len)
+        return 1;
+
+    for (i = x->data.len - 1; i < x->data.len; i--) {
+        if (x->data.data[i] < y->data.data[i])
+            return -1;
+        if (x->data.data[i] > y->data.data[i])
+            return 1;
+    }
+
+    return 0;
+}
+
+void
+bigIntAnd(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i;
+
+    if (x->data.len < y->data.len)
+        SWAP(BigInt *, x, y);
+
+    arraySetLen(&result.data, x->data.len);
+
+    for (i = 0; i < y->data.len; i++)
+        result.data.data[i] = x->data.data[i] & y->data.data[i];
+    memcpy(result.data.data + i, x->data.data + i, result.data.len - i);
+
+    bigIntMove(out, result);
+}
+
+void
+bigIntOr(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i;
+
+    if (x->data.len < y->data.len)
+        SWAP(BigInt *, x, y);
+
+    arraySetLen(&result.data, x->data.len);
+
+    for (i = 0; i < y->data.len; i++)
+        result.data.data[i] = x->data.data[i] | y->data.data[i];
+
+    memcpy(result.data.data + i,
+           x->data.data + i,
+           sizeof(*result.data.data) * (result.data.len - i));
+
+    bigIntMove(out, result);
+}
+
+void
+bigIntXor(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i;
+
+    if (x->data.len < y->data.len)
+        SWAP(BigInt *, x, y);
+
+    arraySetLen(&result.data, x->data.len);
+
+    for (i = 0; i < y->data.len; i++)
+        result.data.data[i] = x->data.data[i] ^ y->data.data[i];
+    memcpy(result.data.data + i, x->data.data + i, result.data.len - i);
+
+    bigIntMove(out, result);
+}
+
+int
+bigIntLshift(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0}, digits = {0}, bits = {0};
+    BigInt carryBit = bigIntFromU64(CARRY_BIT);
+    unsigned long long sDigits, sBits;
+    unsigned int i, carry = 0;
+
+    bigIntDiv(&digits, &bits, y, &carryBit);
+    bigIntToU64(&sBits, &bits);
+    if (!bigIntToU64(&sDigits, &digits) || sDigits > UINT_MAX)
+        return 0;
+
+    arraySetLen(&result.data, x->data.len + (unsigned int)sDigits);
+    memset(result.data.data, 0, sizeof(*result.data.data) * result.data.len);
+
+    for (i = (unsigned int)sDigits; i < result.data.len; i++) {
+        unsigned int mask = ~((1u << (CARRY_BIT - sBits)) - 1);
+        result.data.data[i] = (x->data.data[i - (unsigned int)sDigits] << sBits) + carry;
+        carry = (x->data.data[i - (unsigned int)sDigits] & mask) >> (CARRY_BIT - sBits);
+    }
+    if (carry)
+        arrayAdd(&result.data, carry);
+
+    bigIntFree(&carryBit);
+    bigIntFree(&digits);
+    bigIntFree(&bits);
+    bigIntMove(out, result);
+    return 1;
+}
+
+void
+bigIntRshift(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0}, digits = {0}, bits = {0};
+    BigInt carryBit = bigIntFromU64(CARRY_BIT);
+    unsigned long long sDigits, sBits;
+    unsigned int i, carry = 0;
+
+    bigIntDiv(&digits, &bits, y, &carryBit);
+    bigIntToU64(&sBits, &bits);
+    bigIntToU64(&sDigits, &digits);
+
+    if (sDigits >= x->data.len) {
+        bigIntMove(out, result);
+        return;
+    }
+
+    arraySetLen(&result.data, x->data.len - (unsigned int)sDigits);
+    memcpy(result.data.data,
+           x->data.data + (unsigned int)sDigits,
+           sizeof(*result.data.data) * result.data.len);
+
+    for (i = result.data.len - 1; i < result.data.len; i--) {
+        unsigned int mask = (1u << sBits) - 1;
+        unsigned int digit = x->data.data[i + (unsigned int)sDigits];
+        result.data.data[i] = (digit >> sBits) + carry;
+        carry = (digit & mask) << (CARRY_BIT - sBits);
+    }
+
+    bigIntFree(&carryBit);
+    bigIntFree(&digits);
+    bigIntFree(&bits);
+    bigIntMove(out, result);
+}
+
+void
+bigIntAdd(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i, carry;
+
+    if (x->sign != y->sign) {
+        if (bigIntCmp(x, y) < 0)
+            SWAP(BigInt *, x, y);
+        y->sign = !y->sign;
+        bigIntSub(out, x, y);
+        return;
+    }
+
+    result.sign = x->sign;
+
+    if (x->data.len < y->data.len)
+        SWAP(BigInt *, x, y);
+
+    arraySetLen(&result.data, x->data.len);
+
+    carry = 0;
+    for (i = 0; i < y->data.len; i++) {
+        result.data.data[i] = x->data.data[i] + y->data.data[i] + carry;
+        carry = result.data.data[i] >> CARRY_BIT;
+        result.data.data[i] &= DIGIT_MASK;
+    }
+
+    carry = 0;
+    for (; i < x->data.len; i++) {
+        result.data.data[i] = x->data.data[i] + carry;
+        carry = result.data.data[i] >> CARRY_BIT;
+        result.data.data[i] &= DIGIT_MASK;
+    }
+
+    if (carry)
+        arrayAdd(&result.data, 1);
+
+    bigIntMove(out, result);
+}
+
+void
+bigIntSub(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i, borrow;
+
+    if (x->sign != y->sign) {
+        if (bigIntCmp(x, y) < 0)
+            SWAP(BigInt *, x, y);
+        y->sign = 0;
+        bigIntAdd(&result, x, y);
+        result.sign = 0;
+        bigIntMove(out, result);
+    }
+    if (bigIntCmp(x, y) < 0) {
+        result.sign = !x->sign;
+        SWAP(BigInt *, x, y);
+    } else {
+        result.sign = x->sign;
+    }
+
+    arraySetLen(&result.data, x->data.len);
+
+    borrow = 0;
+    for (i = 0; i < y->data.len; i++) {
+        result.data.data[i] = x->data.data[i] - y->data.data[i] - borrow;
+        borrow = result.data.data[i] >> CARRY_BIT;
+        result.data.data[i] &= DIGIT_MASK;
+    }
+
+    borrow = 0;
+    for (; i < x->data.len; i++) {
+        result.data.data[i] = x->data.data[i] - borrow;
+        borrow = result.data.data[i] >> CARRY_BIT;
+        result.data.data[i] &= DIGIT_MASK;
+    }
+
+    while (result.data.len && !result.data.data[result.data.len - 1])
+        result.data.len--;
+
+    bigIntMove(out, result);
+}
+
+void
+bigIntMul(BigInt *out, BigInt *x, BigInt *y) {
+    BigInt result = {0};
+    unsigned int i;
+
+    if (x->sign != y->sign)
+        result.sign = 1;
+
+    arraySetLen(&result.data, x->data.len + y->data.len + 1);
+    memset(result.data.data, 0, sizeof(*result.data.data) * result.data.len);
+
+    for (i = 0; i < x->data.len; i++) {
+        unsigned int j, carry = 0;
+        for (j = 0; j < y->data.len; j++) {
+            unsigned long long res = (unsigned long long)result.data.data[i + j] +
+                                     ((unsigned long long)x->data.data[i] *
+                                      (unsigned long long)y->data.data[j]) +
+                                     (unsigned long long)carry;
+            result.data.data[i + j] = (unsigned int)(res & DIGIT_MASK);
+            carry = (unsigned int)(res >> (unsigned long long)CARRY_BIT);
+        }
+        result.data.data[i + y->data.len] = carry;
+    }
+
+    while (result.data.len && !result.data.data[result.data.len - 1])
+        result.data.len--;
+
+    bigIntMove(out, result);
+}
+
+static unsigned int
+bigIntGetBit(BigInt *x, unsigned int bit) {
+    unsigned int index = bit / CARRY_BIT;
+    unsigned int mask = 1u << (bit % CARRY_BIT);
+    return x->data.data[index] & mask;
+}
+
+static void
+bigIntSetBit(BigInt *x, unsigned int totalBit, unsigned int value) {
+    unsigned int index = totalBit / CARRY_BIT;
+    unsigned int bit = totalBit % CARRY_BIT;
+
+    if (x->data.len <= index) {
+        unsigned int oldLen = x->data.len;
+        arraySetLen(&x->data, index + 1);
+        memset(x->data.data + oldLen,
+               0,
+               sizeof(*x->data.data) * (x->data.len - oldLen));
+    }
+
+    x->data.data[index] = (x->data.data[index] & ~(1u << bit)) | ((unsigned int)(value != 0) << bit);
+    if (index == x->data.len - 1 && !x->data.data[index])
+        x->data.len--;
+}
+
+/* Simple binary long division */
+int
+bigIntDiv(BigInt *q, BigInt *r, BigInt *num, BigInt *den) {
+    BigInt quot = {0}, rem = {0};
+    unsigned int numBits = CARRY_BIT * num->data.len;
+    unsigned int i, j;
+
+    if (!den->data.len)
+        return 0;
+
+    for (i = numBits - 1; i < numBits; i--) {
+        unsigned int carry = 0;
+
+        /* Left-shift the remainder by 1 */
+        for (j = 0; j < rem.data.len; j++) {
+            rem.data.data[j] = (rem.data.data[j] << 1) | carry;
+            carry = rem.data.data[j] >> CARRY_BIT;
+            rem.data.data[j] &= DIGIT_MASK;
+        }
+        if (carry)
+            arrayAdd(&rem.data, 1);
+
+        bigIntSetBit(&rem, 0, bigIntGetBit(num, i));
+
+        if (bigIntCmp(&rem, den) >= 0) {
+            bigIntSub(&rem, &rem, den);
+            bigIntSetBit(&quot, i, 1);
+        }
+    }
+
+    if (r)
+        bigIntMove(r, rem);
+    else
+        bigIntFree(&rem);
+    if (q)
+        bigIntMove(q, quot);
+    else
+        bigIntFree(&quot);
+    return 1;
+}
+
+void
+bigIntPrint(BigInt *x) {
+    BigInt value = bigIntCopy(x);
+    BigInt ten = bigIntFromI64(10);
+    String buf = {0};
+    unsigned int i;
+
+    if (!x->data.len) {
+        putchar('0');
+        return;
+    }
+
+    if (x->sign == 1) {
+        putchar('-');
+        x->sign = 0;
+    }
+
+    while (value.data.len) {
+        BigInt rem = {0};
+        bigIntDiv(&value, &rem, &value, &ten);
+
+        stringAddC(&buf, '0' + (char)rem.data.data[0]);
+        bigIntFree(&rem);
+    }
+
+    for (i = buf.len - 1; i < buf.len; i--)
+        putchar(buf.data[i]);
+
+    stringFree(&buf);
+    bigIntFree(&value);
+    bigIntFree(&ten);
+}
+
 void
 tableAdd(Table *tbl, Symbol sym, void *val) {
     uintptr_t i;
@@ -370,7 +787,9 @@ printToken(Token tok) {
 void
 printType(DataType type) {
     switch (type.kind) {
+    case TYPE_COMPTIME_INT: printf("comptime_int"); break;
     case TYPE_INT: printf("%c%hhu", type.isSigned ? 'i' : 'u', type.width); break;
+    case TYPE_COMPTIME_FLOAT: printf("comptime_float"); break;
     case TYPE_FLOAT: printf("f%hhu", type.width); break;
     case TYPE_BOOL: printf("bool"); break;
     }
@@ -379,7 +798,7 @@ printType(DataType type) {
 void
 printExpr(ExprHeader *expr) {
     switch (expr->type) {
-    case EXPR_INT: printf("%llu", ((IntExpr *)expr)->value); break;
+    case EXPR_INT: bigIntPrint(&((IntExpr *)expr)->value); break;
     case EXPR_FLOAT: printf("%f", ((FloatExpr *)expr)->value); break;
     case EXPR_BOOL: printf("%s", ((BoolExpr *)expr)->value ? "true" : "false"); break;
     case EXPR_STR: printf("\"%s\"", ((StrExpr *)expr)->value.str); break;

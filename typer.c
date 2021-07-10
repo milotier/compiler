@@ -4,6 +4,21 @@
 #include "common.h"
 #include "typer.h"
 
+#define HANDLE_BINOP(BINOP, op, ExprType) \
+    case BINOP: {\
+        ExprType *result = alloc##ExprType(); \
+        result->value = ((ExprType *)binop->left)->value op \
+                        ((ExprType *)binop->right)->value; \
+        *exprPtr = (ExprHeader *)result; \
+    } break;
+
+#define HANDLE_INT_BINOP(BINOP, func) \
+    case BINOP: {\
+        IntExpr *result = allocIntExpr(); \
+        func(&result->value, leftValue, rightValue); \
+        *exprPtr = (ExprHeader *)result; \
+    } break;
+
 typedef ArrayType(Declaration *) DeclList;
 
 static void checkDecl(
@@ -13,121 +28,242 @@ static void checkDecl(
     DeclList *visitedDecls
 );
 
-static DataType *
-getExprDataType(
-    ExprHeader *expr,
+static DataType *getExprDataType(
+    ExprHeader **exprPtr,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+);
+
+static int
+getTypeFamily(DataType *type) {
+    if (type->kind == TYPE_COMPTIME_INT)
+        return TYPE_INT;
+    if (type->kind == TYPE_COMPTIME_FLOAT)
+        return TYPE_FLOAT;
+    return type->kind;
+}
+
+static DataType
+getBinopDataType(
+    ExprHeader **exprPtr,
     Context *ctx,
     Scope *scope,
     DeclList *visitedDecls
 ) {
+    BinopExpr *binop = (BinopExpr *)*exprPtr;
     DataType type = {0};
-    switch (expr->type) {
-    case EXPR_INT:
-        type.kind = TYPE_INT;
-        type.isFromLiteral = 1;
-        type.width = 32;
-        type.isSigned = 1;
-        break;
-    case EXPR_FLOAT:
-        type.kind = TYPE_FLOAT;
-        type.isFromLiteral = 1;
-        type.width = 32;
-        break;
-    case EXPR_BOOL:
-        type.kind = TYPE_BOOL;
-        type.isFromLiteral = 1;
-        break;
-    case EXPR_STR: /*TODO*/ break;
 
-    case EXPR_BINOP: {
-        BinopExpr *binop = (BinopExpr *)expr;
-        if (binop->type >= BINOP_FIRST_NON_ASS &&
-            binop->type <= BINOP_LAST_NON_ASS)
-        {
-            DataType *leftType = getExprDataType(binop->left, ctx, scope, visitedDecls);
-            DataType *rightType = getExprDataType(binop->right, ctx, scope, visitedDecls);
-            if (leftType->kind != rightType->kind)
-                error(ctx, expr->pos,
-                      "infix operators used on values in different type families");
-            if (leftType->kind == TYPE_INT) {
+    if (binop->type >= BINOP_FIRST_NON_ASS &&
+        binop->type <= BINOP_LAST_NON_ASS)
+    {
+        DataType *leftType = getExprDataType(&binop->left,
+                                             ctx,
+                                             scope,
+                                             visitedDecls);
+        DataType *rightType = getExprDataType(&binop->right,
+                                              ctx,
+                                              scope,
+                                              visitedDecls);
+        if (getTypeFamily(leftType) != getTypeFamily(rightType))
+            error(ctx, binop->header.pos,
+                  "infix operators used on values in different type families");
+        if (getTypeFamily(leftType) == TYPE_INT) {
+            if (binop->type >= BINOP_FIRST_LOG && binop->type <= BINOP_LAST_LOG)
+                error(ctx, binop->header.pos, "integers used in logical operator");
+
+            if (binop->left->type == EXPR_INT && binop->right->type == EXPR_INT) {
+                BigInt *leftValue = &((IntExpr *)binop->left)->value;
+                BigInt *rightValue = &((IntExpr *)binop->right)->value;
+
+                switch (binop->type) {
+                    HANDLE_INT_BINOP(BINOP_ADD, bigIntAdd)
+                    HANDLE_INT_BINOP(BINOP_SUB, bigIntSub)
+                    HANDLE_INT_BINOP(BINOP_MUL, bigIntMul)
+                    HANDLE_INT_BINOP(BINOP_BITAND, bigIntAnd)
+                    HANDLE_INT_BINOP(BINOP_BITOR, bigIntOr)
+                    HANDLE_INT_BINOP(BINOP_BITXOR, bigIntXor)
+                    HANDLE_INT_BINOP(BINOP_RSHIFT, bigIntRshift)
+                    case BINOP_LSHIFT: {
+                        IntExpr *result = allocIntExpr();
+                        if (!bigIntLshift(&result->value, leftValue, rightValue))
+                            error(ctx, binop->header.pos, "left-shift overflows memory");
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_DIV: {
+                        IntExpr *result = allocIntExpr();
+                        if (!bigIntDiv(&result->value, NULL, leftValue, rightValue))
+                            error(ctx, binop->header.pos, "division by zero");
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_MOD: {
+                        IntExpr *result = allocIntExpr();
+                        if (!bigIntDiv(NULL, &result->value, leftValue, rightValue))
+                            error(ctx, binop->header.pos, "division by zero");
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_EQ: {
+                        BoolExpr *result = allocBoolExpr();
+                        result->value = bigIntCmp(leftValue, rightValue) == 0;
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_LT: {
+                        BoolExpr *result = allocBoolExpr();
+                        result->value = bigIntCmp(leftValue, rightValue) < 0;
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_LTE: {
+                        BoolExpr *result = allocBoolExpr();
+                        result->value = bigIntCmp(leftValue, rightValue) <= 0;
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_GT: {
+                        BoolExpr *result = allocBoolExpr();
+                        result->value = bigIntCmp(leftValue, rightValue) > 0;
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                    case BINOP_GTE: {
+                        BoolExpr *result = allocBoolExpr();
+                        result->value = bigIntCmp(leftValue, rightValue) >= 0;
+                        *exprPtr = (ExprHeader *)result;
+                    } break;
+                }
+            }
+
+            if (leftType->kind == TYPE_COMPTIME_INT && rightType->kind == TYPE_COMPTIME_INT) {
+                type.kind = TYPE_COMPTIME_INT;
+            } else {
                 type.kind = TYPE_INT;
 
-                if (binop->type >= BINOP_FIRST_LOG &&
-                    binop->type <= BINOP_LAST_LOG)
-                {
-                    error(ctx, expr->pos,
-                          "integers used in logical operator");
-                }
+                if (leftType->kind == TYPE_COMPTIME_INT)
+                    SWAP(DataType *, leftType, rightType);
 
-                if (leftType->isFromLiteral) {
-                    leftType->width = rightType->width;
-                    leftType->isSigned = rightType->isSigned;
-                } else if (rightType->isFromLiteral) {
+                if (rightType->kind == TYPE_COMPTIME_INT) {
                     rightType->width = leftType->width;
                     rightType->isSigned = leftType->isSigned;
                 }
-                if (leftType->isFromLiteral && rightType->isFromLiteral)
-                    type.isFromLiteral = 1;
 
                 if (leftType->isSigned != rightType->isSigned)
-                    error(ctx, expr->pos,
-                          "infix used operators on integers of different signs");
+                    error(ctx, binop->header.pos,
+                          "infix operators used on integers of different signs");
                 type.isSigned = leftType->isSigned;
 
                 if (leftType->width != rightType->width)
-                    error(ctx, expr->pos,
+                    error(ctx, binop->header.pos,
                           "infix operators used on integers of different widths");
                 type.width = leftType->width;
-            } else if (leftType->kind == TYPE_FLOAT) {
-                type.kind = TYPE_FLOAT;
-
-                if (binop->type >= BINOP_FIRST_BINARY &&
-                    binop->type <= BINOP_LAST_BINARY)
-                {
-                    error(ctx, expr->pos,
-                          "floating-point numbers used in bitwise operator");
-                }
-                if (binop->type >= BINOP_FIRST_LOG &&
-                    binop->type <= BINOP_LAST_LOG)
-                {
-                    error(ctx, expr->pos,
-                          "floating-point numbers used in logical operator");
-                }
-
-                if (leftType->isFromLiteral)
-                    leftType->width = rightType->width;
-                else if (rightType->isFromLiteral)
-                    rightType->width = leftType->width;
-                if (leftType->isFromLiteral && rightType->isFromLiteral)
-                    type.isFromLiteral = 1;
-                if (leftType->width != rightType->width)
-                    error(ctx, expr->pos,
-                          "infix operator used on floating-point numbers of different widths");
-                type.width = leftType->width;
-            } else if (leftType->kind == TYPE_BOOL) {
-                type.kind = TYPE_BOOL;
-                if (binop->type >= BINOP_FIRST_ARITH &&
-                     binop->type <= BINOP_LAST_ARITH)
-                {
-                    error(ctx, expr->pos, "booleans used in arithmetic operator");
-                }
-                if (binop->type >= BINOP_FIRST_BINARY &&
-                     binop->type <= BINOP_LAST_BINARY)
-                {
-                    error(ctx, expr->pos, "booleans used in bitwise operator");
-                }
-            } else {
-                error(ctx, expr->pos,
-                      "invalid type for arithmetic infix operator");
             }
-
-            if (binop->type >= BINOP_FIRST_CMP &&
-                binop->type <= BINOP_LAST_CMP)
+        } else if (getTypeFamily(leftType) == TYPE_FLOAT) {
+            if (leftType->kind == TYPE_COMPTIME_FLOAT &&
+                rightType->kind == TYPE_COMPTIME_FLOAT)
             {
-                type.kind = TYPE_BOOL;
+                type.kind = TYPE_COMPTIME_FLOAT;
+            } else {
+                type.kind = TYPE_FLOAT;
             }
+
+            if (binop->type >= BINOP_FIRST_BINARY &&
+                binop->type <= BINOP_LAST_BINARY)
+            {
+                error(ctx, binop->header.pos,
+                      "floating-point numbers used in bitwise operator");
+            }
+            if (binop->type >= BINOP_FIRST_LOG &&
+                binop->type <= BINOP_LAST_LOG)
+            {
+                error(ctx, binop->header.pos,
+                      "floating-point numbers used in logical operator");
+            }
+            if (binop->type == BINOP_MOD)
+                error(ctx, binop->header.pos,
+                      "floating-point numbers used in modulo operator");
+
+            if (leftType->kind == TYPE_COMPTIME_FLOAT)
+                SWAP(DataType *, leftType, rightType);
+            if (rightType->kind == TYPE_COMPTIME_FLOAT)
+                rightType->width = leftType->width;
+            if (leftType->width != rightType->width)
+                error(ctx, binop->header.pos,
+                      "infix operator used on floating-point numbers of different widths");
+
+            if (binop->left->type == EXPR_FLOAT && binop->right->type == EXPR_FLOAT) {
+                switch (binop->type) {
+                    HANDLE_BINOP(BINOP_ADD, +, FloatExpr)
+                    HANDLE_BINOP(BINOP_SUB, -, FloatExpr)
+                    HANDLE_BINOP(BINOP_MUL, *, FloatExpr)
+                    HANDLE_BINOP(BINOP_DIV, /, FloatExpr)
+                    HANDLE_BINOP(BINOP_EQ, ==, BoolExpr)
+                    HANDLE_BINOP(BINOP_NEQ, !=, BoolExpr)
+                    HANDLE_BINOP(BINOP_LT, <, BoolExpr)
+                    HANDLE_BINOP(BINOP_LTE, <=, BoolExpr)
+                    HANDLE_BINOP(BINOP_GT, >, BoolExpr)
+                    HANDLE_BINOP(BINOP_GTE, >=, BoolExpr)
+                }
+            }
+
+            type.width = leftType->width;
+        } else if (leftType->kind == TYPE_BOOL) {
+            type.kind = TYPE_BOOL;
+            if (binop->type >= BINOP_FIRST_ARITH &&
+                binop->type <= BINOP_LAST_ARITH)
+            {
+                error(ctx, binop->header.pos, "booleans used in arithmetic operator");
+            }
+            if (binop->type >= BINOP_FIRST_BINARY &&
+                binop->type <= BINOP_LAST_BINARY)
+            {
+                error(ctx, binop->header.pos, "booleans used in bitwise operator");
+            }
+
+            if (binop->left->type == EXPR_BOOL &&
+                binop->right->type == EXPR_BOOL)
+            {
+                switch (binop->type) {
+                    HANDLE_BINOP(BINOP_AND, &&, BoolExpr)
+                    HANDLE_BINOP(BINOP_OR, ||, BoolExpr)
+                    HANDLE_BINOP(BINOP_EQ, ==, BoolExpr)
+                    HANDLE_BINOP(BINOP_NEQ, !=, BoolExpr)
+                    HANDLE_BINOP(BINOP_LT, <, BoolExpr)
+                    HANDLE_BINOP(BINOP_LTE, <=, BoolExpr)
+                    HANDLE_BINOP(BINOP_GT, >, BoolExpr)
+                    HANDLE_BINOP(BINOP_GTE, >=, BoolExpr)
+                }
+            }
+        } else {
+            error(ctx, binop->header.pos, "invalid type for arithmetic infix operator");
         }
-    } break;
+
+        if (binop->type >= BINOP_FIRST_CMP &&
+            binop->type <= BINOP_LAST_CMP)
+        {
+            type.kind = TYPE_BOOL;
+        }
+    }
+return type; }
+static DataType *
+getExprDataType(
+    ExprHeader **exprPtr,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+) {
+    ExprHeader *expr = *exprPtr;
+    DataType type = {0};
+    switch (expr->type) {
+    case EXPR_INT:
+        type.kind = TYPE_COMPTIME_INT;
+        break;
+    case EXPR_FLOAT:
+        type.kind = TYPE_COMPTIME_FLOAT;
+        break;
+    case EXPR_BOOL:
+        type.kind = TYPE_BOOL;
+        break;
+    case EXPR_STR: /*TODO*/ break;
+
+    case EXPR_BINOP:
+        type = getBinopDataType(exprPtr, ctx, scope, visitedDecls);
+        break;
 
     case EXPR_IDENT: {
         Declaration *decl = scopeGet(scope, ((IdentExpr *)expr)->value);
@@ -137,20 +273,24 @@ getExprDataType(
         for (i = 0; i < visitedDecls->len; i++)
             if (visitedDecls->data[i] == decl)
                 error(ctx, decl->pos, "recursive declaration");
-        arrayAdd(visitedDecls, decl);
 
         if (decl->type.kind == TYPE_INFERRED) {
             if (scope != &ctx->topScope)
                 error(ctx, expr->pos, "undeclared identifier");
+            arrayAdd(visitedDecls, decl);
             checkDecl(decl, ctx, scope, visitedDecls);
+            arrayRemove(visitedDecls, visitedDecls->len - 1);
         }
+
+        if (decl->isConst)
+            *exprPtr = decl->value;
 
         type = decl->type;
     } break;
     }
 
-    expr->dataType = type;
-    return &expr->dataType;
+    (*exprPtr)->dataType = type;
+    return &(*exprPtr)->dataType;
 }
 
 static void
@@ -160,21 +300,53 @@ checkDecl(
     Scope *scope,
     DeclList *visitedDecls
 ) {
-    DataType *valueType = getExprDataType(decl->value, ctx, scope, visitedDecls);
+    DataType *valueType = getExprDataType(&decl->value, ctx, scope, visitedDecls);
+    int typeInferred = 0;
 
-    if (decl->type.kind == TYPE_INFERRED)
+    if (decl->type.kind == TYPE_INFERRED) {
         decl->type = *valueType;
-
-    if (decl->type.kind != valueType->kind)
-        error(ctx, decl->pos, "assigned value does not match type");
-    if (decl->type.kind == TYPE_INT || decl->type.kind == TYPE_FLOAT) {
-        if (!valueType->isFromLiteral && decl->type.width < valueType->width)
-            error(ctx, decl->pos, "width of assigned value does not match type");
-        if (!valueType->isFromLiteral && decl->type.isSigned != valueType->isSigned)
-            error(ctx, decl->pos, "sign of assigned value does not match type");
+        typeInferred = 1;
     }
 
-    decl->type.isFromLiteral = 0;
+    if (getTypeFamily(&decl->type) != getTypeFamily(valueType))
+        error(ctx, decl->pos, "assigned value does not match type");
+
+    if (decl->isConst &&
+        (decl->value->type < EXPR_FIRST_LIT || decl->value->type > EXPR_LAST_LIT))
+    {
+        error(ctx, decl->pos, "constant declarations must have a constant value");
+    }
+
+    if ((decl->type.kind == TYPE_COMPTIME_INT || decl->type.kind == TYPE_COMPTIME_FLOAT) &&
+        !decl->isConst)
+    {
+        if (typeInferred)
+            error(ctx, decl->pos,
+                  "variables assigned with a constant integer or float must be declared with a type");
+        else
+            error(ctx, decl->pos, "a variable cannot be declared with a compile-time type");
+    }
+
+    if (decl->type.kind == TYPE_INT && valueType->kind == TYPE_INT &&
+        decl->type.width != valueType->width)
+    {
+        error(ctx, decl->pos, "width of assigned value does not match type");
+    }
+
+    if (decl->type.kind == TYPE_INT && decl->value->type == EXPR_INT) {
+        BigInt *value = &((IntExpr *)decl->value)->value;
+        if (decl->type.isSigned) {
+            BigInt maxValue = bigIntFromI64((1ll << (decl->type.width - 1)) - 1);
+            if (bigIntCmp(value, &maxValue) > 0)
+                error(ctx, decl->pos, "assigned integer is too large");
+        } else {
+            BigInt maxValue = bigIntFromU64(decl->type.width == 64 ?
+                                            ~0ull :
+                                            (1ull << decl->type.width) - 1);
+            if (bigIntCmp(value, &maxValue) > 0)
+                error(ctx, decl->pos, "assigned integer is too large");
+        }
+    }
 }
 
 void

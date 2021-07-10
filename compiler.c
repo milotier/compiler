@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <locale.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -81,8 +82,14 @@ main(int argc, char *argv[]) {
 
     for (i = 0; (unsigned int)i < ctx.topScope.value.tbl.cap; i++) {
         if (ctx.topScope.value.tbl.entries[i].sym.str) {
-            printf("%s: ", ctx.topScope.value.tbl.entries[i].sym.str);
-            printType(((Declaration *)ctx.topScope.value.tbl.entries[i].val)->type);
+            Declaration *decl = ctx.topScope.value.tbl.entries[i].val;
+            printf("%s : ", ctx.topScope.value.tbl.entries[i].sym.str);
+            printType(decl->type);
+            if (decl->isConst)
+                printf(" : ");
+            else
+                printf(" = ");
+            printExpr(decl->value);
             putchar('\n');
         }
     }

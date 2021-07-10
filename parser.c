@@ -11,44 +11,6 @@ static ExprHeader *parseExpr(Context *, Scope *);
 static StmtHeader *parseStmt(Context *, Scope *);
 
 /* function implementations */
-#define EXPR_ALLOC_FUNC(lower, upper) \
-static lower##Expr * \
-alloc##lower##Expr(void) \
-{ \
-    lower##Expr *expr = xMalloc(sizeof(*expr)); \
-    *expr = (lower##Expr) {0}; \
-    expr->header.type = EXPR_##upper; \
-    return expr; \
-}
-
-EXPR_ALLOC_FUNC(Int, INT)
-EXPR_ALLOC_FUNC(Float, FLOAT)
-EXPR_ALLOC_FUNC(Bool, BOOL)
-EXPR_ALLOC_FUNC(Str, STR)
-EXPR_ALLOC_FUNC(Member, MEMBER)
-EXPR_ALLOC_FUNC(Call, CALL)
-EXPR_ALLOC_FUNC(Ident, IDENT)
-EXPR_ALLOC_FUNC(Unop, UNOP)
-EXPR_ALLOC_FUNC(Binop, BINOP)
-EXPR_ALLOC_FUNC(Func, FUNC)
-
-#define STMT_ALLOC_FUNC(lower, upper) \
-static lower##Stmt * \
-alloc##lower##Stmt(void) \
-{ \
-    lower##Stmt *stmt = xMalloc(sizeof(*stmt)); \
-    *stmt = (lower##Stmt) {0}; \
-    stmt->header.type = STMT_##upper; \
-    return stmt; \
-}
-
-STMT_ALLOC_FUNC(Expr, EXPR)
-STMT_ALLOC_FUNC(Return, RETURN)
-STMT_ALLOC_FUNC(If, IF)
-STMT_ALLOC_FUNC(While, WHILE)
-STMT_ALLOC_FUNC(Block, BLOCK)
-STMT_ALLOC_FUNC(Decl, DECL)
-
 static DataType
 parseType(Context *ctx) {
     DataType type = {0};
@@ -208,13 +170,13 @@ parseSingularExpr(Context *ctx, Scope *scope) {
             return expr;
         }
     } break;
-    HANDLE_TOKEN(TOK_INT, IntExpr, tok.val.i)
+    HANDLE_TOKEN(TOK_INT, IntExpr, tok.val.bi)
     HANDLE_TOKEN(TOK_FLOAT, FloatExpr, tok.val.f)
     HANDLE_TOKEN(TOK_BOOL, BoolExpr, (unsigned char)tok.val.i)
     HANDLE_TOKEN(TOK_STR, StrExpr, tok.val.s)
     HANDLE_TOKEN(TOK_IDENT, IdentExpr, tok.val.s)
     default:
-        error(ctx, tok.pos, "unexpected Token found while parsing expression");
+        error(ctx, tok.pos, "unexpected token found while parsing expression");
     }
 }
 
