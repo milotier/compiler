@@ -186,15 +186,8 @@ parsePostfixExpr(Context *ctx, Scope *scope) {
     ExprHeader *expr = child;
     Token tok = peekToken(1, ctx);
 
-    while (tok.type == '^' || tok.type == '.' || tok.type == '[' || tok.type == '(') {
-        if (tok.type == '^') {
-            char nextType = peekToken(2, ctx).type;
-            /* Check wether the caret is being used as
-             * a bitwise xor operator */
-            if (nextType == '(' || (nextType >= FIRST_LIT_TOK &&
-                        nextType <= LAST_LIT_TOK))
-                break;
-
+    while (tok.type == '@' || tok.type == '.' || tok.type == '[' || tok.type == '(') {
+        if (tok.type == '@') {
             nextToken(ctx);
             expr = (ExprHeader *)allocUnopExpr();
             expr->pos = tok.pos;
@@ -247,20 +240,19 @@ static ExprHeader *
 parsePrefixExpr(Context *ctx, Scope *scope) {
     Token tok = peekToken(1, ctx);
 
-    if (tok.type == '&') {
+    if (tok.type == '@' || tok.type == '!' || tok.type == '-') {
         nextToken(ctx);
         UnopExpr *expr = allocUnopExpr();
         expr->header.pos = tok.pos;
-        expr->type = UNOP_ADDR_OF;
         expr->child = parsePrefixExpr(ctx, scope);
-        return (ExprHeader *)expr;
-    }
-    if (tok.type == '!') {
-        nextToken(ctx);
-        UnopExpr *expr = allocUnopExpr();
-        expr->header.pos = tok.pos;
-        expr->type = UNOP_NOT;
-        expr->child = parsePrefixExpr(ctx, scope);
+
+        if (tok.type == '@')
+            expr->type = UNOP_ADDR_OF;
+        else if (tok.type == '!')
+            expr->type = UNOP_NOT;
+        else
+            expr->type = UNOP_NEG;
+
         return (ExprHeader *)expr;
     }
 

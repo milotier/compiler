@@ -25,10 +25,10 @@ void *xMalloc(size_t);
 
 #define ArrayType(T) struct { T *data; unsigned int len, cap; }
 #define arrayCopy(a, b) ( \
-    (b)->cap = (a)->cap, \
-    (b)->len = (a)->len, \
-    (b)->data = xMalloc(sizeof(*(a)->data) * (a)->cap), \
-    memcpy((b)->data, (a)->data, sizeof(*(a)->data) * (a)->len) \
+    (a)->cap = (b)->cap, \
+    (a)->len = (b)->len, \
+    (a)->data = xMalloc(sizeof(*(b)->data) * (b)->cap), \
+    memcpy((a)->data, (b)->data, sizeof(*(a)->data) * (a)->len) \
 )
 #define arraySetLen(a, l) ( \
     ((l) > (a)->cap) ? (void)( \
@@ -196,6 +196,7 @@ enum {
     UNOP_DEREF,
     UNOP_ADDR_OF,
     UNOP_NOT,
+    UNOP_NEG,
 };
 typedef struct {
     ExprHeader header;
@@ -387,16 +388,18 @@ Declaration *scopeGet(Scope *, Symbol);
 
 BigInt bigIntFromU64(unsigned long long);
 BigInt bigIntFromI64(long long);
-BigInt bigIntCopy(BigInt *);
+int bigIntToU64(unsigned long long *out, BigInt *x);
+void bigIntCopy(BigInt *, BigInt *);
 void bigIntFree(BigInt *);
 void bigIntMove(BigInt *, BigInt);
+void bigIntNeg(BigInt *, BigInt *);
 int bigIntCmp(BigInt *, BigInt *);
-int bigIntToU64(unsigned long long *out, BigInt *x);
+void bigIntNot(BigInt *out, BigInt *x);
 void bigIntAnd(BigInt *out, BigInt *x, BigInt *y);
 void bigIntOr(BigInt *out, BigInt *x, BigInt *y);
 void bigIntXor(BigInt *out, BigInt *x, BigInt *y);
-int bigIntLshift(BigInt *out, BigInt *x, BigInt *y);
-void bigIntRshift(BigInt *out, BigInt *x, BigInt *y);
+int bigIntShl(BigInt *out, BigInt *x, BigInt *y);
+void bigIntShr(BigInt *out, BigInt *x, BigInt *y);
 void bigIntAdd(BigInt *, BigInt *, BigInt *);
 void bigIntSub(BigInt *, BigInt *, BigInt *);
 void bigIntMul(BigInt *, BigInt *, BigInt *);

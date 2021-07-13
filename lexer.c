@@ -395,7 +395,7 @@ nextLiteralToken(Context *ctx) {
     }
 
     if (c != '.' && c != ':' && c != ';' && c != ',' && c != '(' && c != ')'
-        && c != '[' && c != ']' && c != '{' && c != '}') {
+        && c != '[' && c != ']' && c != '{' && c != '}' && c != '@') {
         if (isprint(c))
             error(ctx, tok.pos, "found illegal character '%c'", c);
         else

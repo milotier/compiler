@@ -259,12 +259,12 @@ bigIntToU64(unsigned long long *out, BigInt *x) {
     return 1;
 }
 
-BigInt
-bigIntCopy(BigInt *x) {
-    BigInt y;
-    y.sign = x->sign;
-    arrayCopy(&x->data, &y.data);
-    return y;
+void
+bigIntCopy(BigInt *out, BigInt *x) {
+    BigInt result;
+    result.sign = x->sign;
+    arrayCopy(&result.data, &x->data);
+    bigIntMove(out, result);
 }
 
 void
@@ -299,12 +299,128 @@ bigIntCmp(BigInt *x, BigInt *y) {
 }
 
 void
+bigIntNeg(BigInt *out, BigInt *x) {
+    BigInt result = {0};
+    bigIntCopy(&result, x);
+    result.sign = !result.sign;
+    bigIntMove(out, result);
+}
+
+static unsigned int
+bigIntGetBit(BigInt *x, unsigned int bit) {
+    unsigned int index = bit / CARRY_BIT;
+    unsigned int mask = 1u << (bit % CARRY_BIT);
+    return x->data.data[index] & mask;
+}
+
+static void
+bigIntSetBit(BigInt *x, unsigned int totalBit, unsigned int value) {
+    unsigned int index = totalBit / CARRY_BIT;
+    unsigned int bit = totalBit % CARRY_BIT;
+
+    if (x->data.len <= index) {
+        unsigned int oldLen = x->data.len;
+        arraySetLen(&x->data, index + 1);
+        memset(x->data.data + oldLen,
+               0,
+               sizeof(*x->data.data) * (x->data.len - oldLen));
+    }
+
+    x->data.data[index] = (x->data.data[index] & ~(1u << bit)) | ((unsigned int)(value != 0) << bit);
+    if (index == x->data.len - 1 && !x->data.data[index])
+        x->data.len--;
+}
+
+static void bigIntNotDigits(BigInt *out, BigInt *x, unsigned int digits, int isSigned);
+
+static void
+bigIntToTwosComplement(BigInt *out, BigInt *x, unsigned int digits) {
+    BigInt result = {0};
+
+    if (x->sign) {
+        BigInt one = bigIntFromU64(1);
+
+        bigIntNotDigits(&result, x, digits, 0);
+        bigIntAdd(&result, &result, &one);
+        bigIntMove(out, result);
+        return;
+    }
+
+    bigIntCopy(out, x);
+}
+
+static void
+bigIntFromTwosComplement(BigInt *out, BigInt *x) {
+    BigInt result = {0};
+
+    if (bigIntGetBit(x, (x->data.len * CARRY_BIT) - 1)) {
+        BigInt one = bigIntFromU64(1);
+
+        bigIntSub(&result, x, &one);
+        bigIntNotDigits(&result, &result, x->data.len, 0);
+        result.sign = 1;
+
+        bigIntMove(out, result);
+        return;
+    }
+
+    bigIntCopy(out, x);
+}
+
+static void
+bigIntNotDigits(BigInt *out, BigInt *x, unsigned int digits, int isSigned) {
+    BigInt result = {0};
+    unsigned int i;
+
+    if (isSigned && x->sign) {
+        bigIntToTwosComplement(&result, x, digits);
+        bigIntNotDigits(&result, &result, digits, 0);
+        bigIntFromTwosComplement(&result, &result, digits);
+        bigIntMove(out, result);
+        return;
+    }
+
+    arraySetLen(&result.data, digits);
+
+    for (i = 0; i < result.data.len; i++)
+        result.data.data[i] = (~x->data.data[i]) & DIGIT_MASK;
+
+    bigIntMove(out, result);
+}
+
+static unsigned int
+bigIntTwosComplementDigits(BigInt *x) {
+    unsigned int digits = x->data.len;
+    if (bigIntGetBit(x, (digits * CARRY_BIT) - 1))
+        digits++;
+    return digits;
+}
+
+void
+bigIntNot(BigInt *out, BigInt *x) {
+    bigIntNotDigits(out, x, bigIntTwosComplementDigits(x), 1);
+}
+
+void
 bigIntAnd(BigInt *out, BigInt *x, BigInt *y) {
     BigInt result = {0};
     unsigned int i;
 
     if (x->data.len < y->data.len)
         SWAP(BigInt *, x, y);
+
+    if (x->sign || y->sign) {
+        BigInt left = {0}, right = {0};
+        unsigned int digits = MAX(bigIntTwosComplementDigits(x), bigIntTwosComplementDigits(y));
+
+        bigIntToTwosComplement(&left, x, digits);
+        bigIntToTwosComplement(&right, y, digits);
+        bigIntAnd(&result, &left, &right);
+        bigIntFromTwosComplement(&result, &result, digits);
+
+        bigIntMove(out, result);
+        return;
+    }
 
     arraySetLen(&result.data, x->data.len);
 
@@ -322,6 +438,19 @@ bigIntOr(BigInt *out, BigInt *x, BigInt *y) {
 
     if (x->data.len < y->data.len)
         SWAP(BigInt *, x, y);
+
+    if (x->sign || y->sign) {
+        BigInt left = {0}, right = {0};
+        unsigned int digits = MAX(bigIntTwosComplementDigits(x), bigIntTwosComplementDigits(y));
+
+        bigIntToTwosComplement(&left, x, digits);
+        bigIntToTwosComplement(&right, y, digits);
+        bigIntOr(&result, &left, &right);
+        bigIntFromTwosComplement(&result, &result, digits);
+
+        bigIntMove(out, result);
+        return;
+    }
 
     arraySetLen(&result.data, x->data.len);
 
@@ -343,6 +472,19 @@ bigIntXor(BigInt *out, BigInt *x, BigInt *y) {
     if (x->data.len < y->data.len)
         SWAP(BigInt *, x, y);
 
+    if (x->sign || y->sign) {
+        BigInt left = {0}, right = {0};
+        unsigned int digits = MAX(bigIntTwosComplementDigits(x), bigIntTwosComplementDigits(y));
+
+        bigIntToTwosComplement(&left, x, digits);
+        bigIntToTwosComplement(&right, y, digits);
+        bigIntXor(&result, &left, &right);
+        bigIntFromTwosComplement(&result, &result, digits);
+
+        bigIntMove(out, result);
+        return;
+    }
+
     arraySetLen(&result.data, x->data.len);
 
     for (i = 0; i < y->data.len; i++)
@@ -353,11 +495,13 @@ bigIntXor(BigInt *out, BigInt *x, BigInt *y) {
 }
 
 int
-bigIntLshift(BigInt *out, BigInt *x, BigInt *y) {
+bigIntShl(BigInt *out, BigInt *x, BigInt *y) {
     BigInt result = {0}, digits = {0}, bits = {0};
     BigInt carryBit = bigIntFromU64(CARRY_BIT);
     unsigned long long sDigits, sBits;
     unsigned int i, carry = 0;
+
+    result.sign = x->sign;
 
     bigIntDiv(&digits, &bits, y, &carryBit);
     bigIntToU64(&sBits, &bits);
@@ -383,11 +527,13 @@ bigIntLshift(BigInt *out, BigInt *x, BigInt *y) {
 }
 
 void
-bigIntRshift(BigInt *out, BigInt *x, BigInt *y) {
+bigIntShr(BigInt *out, BigInt *x, BigInt *y) {
     BigInt result = {0}, digits = {0}, bits = {0};
     BigInt carryBit = bigIntFromU64(CARRY_BIT);
     unsigned long long sDigits, sBits;
     unsigned int i, carry = 0;
+
+    result.sign = x->sign;
 
     bigIntDiv(&digits, &bits, y, &carryBit);
     bigIntToU64(&sBits, &bits);
@@ -528,31 +674,6 @@ bigIntMul(BigInt *out, BigInt *x, BigInt *y) {
     bigIntMove(out, result);
 }
 
-static unsigned int
-bigIntGetBit(BigInt *x, unsigned int bit) {
-    unsigned int index = bit / CARRY_BIT;
-    unsigned int mask = 1u << (bit % CARRY_BIT);
-    return x->data.data[index] & mask;
-}
-
-static void
-bigIntSetBit(BigInt *x, unsigned int totalBit, unsigned int value) {
-    unsigned int index = totalBit / CARRY_BIT;
-    unsigned int bit = totalBit % CARRY_BIT;
-
-    if (x->data.len <= index) {
-        unsigned int oldLen = x->data.len;
-        arraySetLen(&x->data, index + 1);
-        memset(x->data.data + oldLen,
-               0,
-               sizeof(*x->data.data) * (x->data.len - oldLen));
-    }
-
-    x->data.data[index] = (x->data.data[index] & ~(1u << bit)) | ((unsigned int)(value != 0) << bit);
-    if (index == x->data.len - 1 && !x->data.data[index])
-        x->data.len--;
-}
-
 /* Simple binary long division */
 int
 bigIntDiv(BigInt *q, BigInt *r, BigInt *num, BigInt *den) {
@@ -596,10 +717,11 @@ bigIntDiv(BigInt *q, BigInt *r, BigInt *num, BigInt *den) {
 
 void
 bigIntPrint(BigInt *x) {
-    BigInt value = bigIntCopy(x);
+    BigInt value = {0};
     BigInt ten = bigIntFromI64(10);
     String buf = {0};
     unsigned int i;
+
 
     if (!x->data.len) {
         putchar('0');
@@ -610,6 +732,8 @@ bigIntPrint(BigInt *x) {
         putchar('-');
         x->sign = 0;
     }
+
+    bigIntCopy(&value, x);
 
     while (value.data.len) {
         BigInt rem = {0};
@@ -828,14 +952,18 @@ printExpr(ExprHeader *expr) {
             printf("!(");
             printExpr(unop->child);
             printf(")");
+        } else if (unop->type == UNOP_NOT) {
+            printf("-(");
+            printExpr(unop->child);
+            printf(")");
         } else if (unop->type == UNOP_ADDR_OF) {
-            printf("&(");
+            printf("@(");
             printExpr(unop->child);
             printf(")");
         } else if (unop->type == UNOP_DEREF) {
             printf("(");
             printExpr(unop->child);
-            printf(")^");
+            printf(")@");
         }
     } break;
     case EXPR_BINOP: {

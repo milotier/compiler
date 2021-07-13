@@ -28,7 +28,7 @@ static void checkDecl(
     DeclList *visitedDecls
 );
 
-static DataType *getExprDataType(
+static DataType *checkExpr(
     ExprHeader **exprPtr,
     Context *ctx,
     Scope *scope,
@@ -45,7 +45,7 @@ getTypeFamily(DataType *type) {
 }
 
 static DataType
-getBinopDataType(
+checkBinop(
     ExprHeader **exprPtr,
     Context *ctx,
     Scope *scope,
@@ -54,14 +54,12 @@ getBinopDataType(
     BinopExpr *binop = (BinopExpr *)*exprPtr;
     DataType type = {0};
 
-    if (binop->type >= BINOP_FIRST_NON_ASS &&
-        binop->type <= BINOP_LAST_NON_ASS)
-    {
-        DataType *leftType = getExprDataType(&binop->left,
+    if (binop->type >= BINOP_FIRST_NON_ASS && binop->type <= BINOP_LAST_NON_ASS) {
+        DataType *leftType = checkExpr(&binop->left,
                                              ctx,
                                              scope,
                                              visitedDecls);
-        DataType *rightType = getExprDataType(&binop->right,
+        DataType *rightType = checkExpr(&binop->right,
                                               ctx,
                                               scope,
                                               visitedDecls);
@@ -83,10 +81,10 @@ getBinopDataType(
                     HANDLE_INT_BINOP(BINOP_BITAND, bigIntAnd)
                     HANDLE_INT_BINOP(BINOP_BITOR, bigIntOr)
                     HANDLE_INT_BINOP(BINOP_BITXOR, bigIntXor)
-                    HANDLE_INT_BINOP(BINOP_RSHIFT, bigIntRshift)
+                    HANDLE_INT_BINOP(BINOP_RSHIFT, bigIntShr)
                     case BINOP_LSHIFT: {
                         IntExpr *result = allocIntExpr();
-                        if (!bigIntLshift(&result->value, leftValue, rightValue))
+                        if (!bigIntShl(&result->value, leftValue, rightValue))
                             error(ctx, binop->header.pos, "left-shift overflows memory");
                         *exprPtr = (ExprHeader *)result;
                     } break;
@@ -239,9 +237,65 @@ getBinopDataType(
             type.kind = TYPE_BOOL;
         }
     }
-return type; }
+
+    return type;
+}
+
+#include <stdio.h>
+static DataType
+checkUnop(
+    ExprHeader **exprPtr,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+) {
+    UnopExpr *unop = (UnopExpr *)*exprPtr;
+    DataType *childType = checkExpr(&unop->child, ctx, scope, visitedDecls);
+    DataType type = {0};
+
+    switch (unop->type) {
+    case UNOP_NOT: {
+        int family = getTypeFamily(childType);
+        if (!(family == TYPE_BOOL || family == TYPE_INT))
+            error(ctx, unop->header.pos, "bitwise negation of value not of integer or boolean type");
+
+        if (unop->child->type == EXPR_INT) {
+            IntExpr *result = allocIntExpr();
+            bigIntNot(&result->value, &((IntExpr *)unop->child)->value);
+            *exprPtr = (ExprHeader *)result;
+        } else {
+            BoolExpr *result = allocBoolExpr();
+            result->value = !((BoolExpr *)unop->child)->value;
+            *exprPtr = (ExprHeader *)result;
+        }
+
+        type = *childType;
+    } break;
+    case UNOP_NEG: {
+        int family = getTypeFamily(childType);
+        if (!(family == TYPE_INT || family == TYPE_FLOAT))
+            error(ctx, unop->header.pos, "negation of value of non-numeric type");
+        if (childType->kind == TYPE_INT && !childType->isSigned)
+            error(ctx, unop->header.pos, "negation of unsigned value");
+
+        if (unop->child->type == EXPR_INT) {
+            IntExpr *result = allocIntExpr();
+            bigIntNeg(&result->value, &((IntExpr *)unop->child)->value);
+            *exprPtr = (ExprHeader *)result;
+        }
+
+        type = *childType;
+    } break;
+
+    /* TODO */
+    default: error(ctx, unop->header.pos, "");
+    }
+
+    return type;
+}
+
 static DataType *
-getExprDataType(
+checkExpr(
     ExprHeader **exprPtr,
     Context *ctx,
     Scope *scope,
@@ -261,8 +315,11 @@ getExprDataType(
         break;
     case EXPR_STR: /*TODO*/ break;
 
+    case EXPR_UNOP:
+        type = checkUnop(exprPtr, ctx, scope, visitedDecls);
+        break;
     case EXPR_BINOP:
-        type = getBinopDataType(exprPtr, ctx, scope, visitedDecls);
+        type = checkBinop(exprPtr, ctx, scope, visitedDecls);
         break;
 
     case EXPR_IDENT: {
@@ -300,7 +357,7 @@ checkDecl(
     Scope *scope,
     DeclList *visitedDecls
 ) {
-    DataType *valueType = getExprDataType(&decl->value, ctx, scope, visitedDecls);
+    DataType *valueType = checkExpr(&decl->value, ctx, scope, visitedDecls);
     int typeInferred = 0;
 
     if (decl->type.kind == TYPE_INFERRED) {
