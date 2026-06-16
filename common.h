@@ -58,6 +58,8 @@ void *xMalloc(size_t);
 
 /* types */
 
+typedef struct FuncExpr FuncExpr;
+
 /* An interned string, used for identifiers and literals */
 typedef struct {
     char *str;
@@ -91,11 +93,15 @@ enum {
     TYPE_COMPTIME_FLOAT,
     TYPE_FLOAT,
     TYPE_BOOL,
+    TYPE_FUNC,
 };
 typedef struct {
-    unsigned char kind;
+    unsigned char kind: 7;
     unsigned char isSigned: 1;
-    unsigned char width;
+    union {
+        unsigned char width;
+        FuncExpr *func;
+    } info;
 } DataType;
 
 enum {
@@ -142,10 +148,15 @@ typedef struct {
     unsigned char isConst;
 } Declaration;
 
-typedef struct scope Scope;
-struct scope {
+enum {
+    SCOPE_BLOCK,
+    SCOPE_FUNC,
+};
+typedef struct Scope Scope;
+struct Scope {
     Scope *parent;
-    /* The top-level Scope uses a Table, all others use an array */
+    unsigned char type;
+    /* The top-level scope uses a table, all others use an array */
     union {
         ArrayType(Declaration *) arr;
         Table tbl;
@@ -184,13 +195,13 @@ typedef struct {
     ArrayType(ExprHeader *) args;
 } CallExpr;
 
-typedef struct {
+struct FuncExpr {
     ExprHeader header;
     Scope scope;
     ArrayType(Declaration) params;
     ArrayType(StmtHeader *) statements;
     DataType returnType;
-} FuncExpr;
+};
 
 enum {
     UNOP_DEREF,

@@ -22,36 +22,36 @@ parseType(Context *ctx) {
         /* fallthrough */
     case TOK_U8:
         type.kind = TYPE_INT;
-        type.width = 8;
+        type.info.width = 8;
         break;
     case TOK_I16:
         type.isSigned = 1;
         /* fallthrough */
     case TOK_U16:
         type.kind = TYPE_INT;
-        type.width = 16;
+        type.info.width = 16;
         break;
     case TOK_I32:
         type.isSigned = 1;
         /* fallthrough */
     case TOK_U32:
         type.kind = TYPE_INT;
-        type.width = 32;
+        type.info.width = 32;
         break;
     case TOK_I64:
         type.isSigned = 1;
         /* fallthrough */
     case TOK_U64:
         type.kind = TYPE_INT;
-        type.width = 64;
+        type.info.width = 64;
         break;
     case TOK_F32:
         type.kind = TYPE_FLOAT;
-        type.width = 32;
+        type.info.width = 32;
         break;
     case TOK_F64:
         type.kind = TYPE_FLOAT;
-        type.width = 64;
+        type.info.width = 64;
         break;
     case TOK_BOOL_TYPE:
         type.kind = TYPE_BOOL;
@@ -75,8 +75,7 @@ parseDecl(Context *ctx, Scope *scope) {
     decl.pos = tok.pos;
 
     tok = peekToken(1, ctx);
-    if (tok.type != '=' && tok.type != ':')
-        decl.type = parseType(ctx);
+    if (tok.type != '=' && tok.type != ':') decl.type = parseType(ctx);
     tok = nextToken(ctx);
     if (tok.type == '=' || tok.type == ':') {
         if (tok.type == ':')
@@ -432,16 +431,13 @@ parseStmt(Context *ctx, Scope *scope) {
         ((WhileStmt *)stmt)->condition = parseExpr(ctx, scope);
         ((WhileStmt *)stmt)->statement = parseStmt(ctx, scope);
     } else if (tok.type == '{') {
-        BlockStmt *blockStmt;
         nextToken(ctx);
         stmt = (StmtHeader *)allocBlockStmt();
-        blockStmt = (BlockStmt *)stmt;
         stmt->pos = tok.pos;
-        blockStmt->scope.parent = scope;
         while (peekToken(1, ctx).type != '}') {
-            StmtHeader *childStmt = parseStmt(ctx, &blockStmt->scope);
+            StmtHeader *childStmt = parseStmt(ctx, &((BlockStmt *)stmt)->scope);
             if (childStmt)
-                arrayAdd(&((BlockStmt *)stmt)->statements,childStmt);
+                arrayAdd(&((BlockStmt *)stmt)->statements, childStmt);
         }
         nextToken(ctx);
     } else if (tok.type == TOK_IDENT && peekToken(2, ctx).type == ':') {

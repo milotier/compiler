@@ -375,7 +375,7 @@ bigIntNotDigits(BigInt *out, BigInt *x, unsigned int digits, int isSigned) {
     if (isSigned && x->sign) {
         bigIntToTwosComplement(&result, x, digits);
         bigIntNotDigits(&result, &result, digits, 0);
-        bigIntFromTwosComplement(&result, &result, digits);
+        bigIntFromTwosComplement(&result, &result);
         bigIntMove(out, result);
         return;
     }
@@ -416,7 +416,7 @@ bigIntAnd(BigInt *out, BigInt *x, BigInt *y) {
         bigIntToTwosComplement(&left, x, digits);
         bigIntToTwosComplement(&right, y, digits);
         bigIntAnd(&result, &left, &right);
-        bigIntFromTwosComplement(&result, &result, digits);
+        bigIntFromTwosComplement(&result, &result);
 
         bigIntMove(out, result);
         return;
@@ -446,7 +446,7 @@ bigIntOr(BigInt *out, BigInt *x, BigInt *y) {
         bigIntToTwosComplement(&left, x, digits);
         bigIntToTwosComplement(&right, y, digits);
         bigIntOr(&result, &left, &right);
-        bigIntFromTwosComplement(&result, &result, digits);
+        bigIntFromTwosComplement(&result, &result);
 
         bigIntMove(out, result);
         return;
@@ -479,7 +479,7 @@ bigIntXor(BigInt *out, BigInt *x, BigInt *y) {
         bigIntToTwosComplement(&left, x, digits);
         bigIntToTwosComplement(&right, y, digits);
         bigIntXor(&result, &left, &right);
-        bigIntFromTwosComplement(&result, &result, digits);
+        bigIntFromTwosComplement(&result, &result);
 
         bigIntMove(out, result);
         return;
@@ -910,12 +910,27 @@ printToken(Token tok) {
 
 void
 printType(DataType type) {
+    unsigned int i;
     switch (type.kind) {
     case TYPE_COMPTIME_INT: printf("comptime_int"); break;
-    case TYPE_INT: printf("%c%hhu", type.isSigned ? 'i' : 'u', type.width); break;
+    case TYPE_INT: printf("%c%hhu", type.isSigned ? 'i' : 'u', type.info.width); break;
     case TYPE_COMPTIME_FLOAT: printf("comptime_float"); break;
-    case TYPE_FLOAT: printf("f%hhu", type.width); break;
+    case TYPE_FLOAT: printf("f%hhu", type.info.width); break;
     case TYPE_BOOL: printf("bool"); break;
+    case TYPE_FUNC:
+        putchar('(');
+        for (i = 0; i < type.info.func->params.len; i++) {
+            printf("%s: ", type.info.func->params.data[i].name.str);
+            printType(type.info.func->params.data[i].type);
+            if (i != type.info.func->params.len - 1)
+                printf(", ");
+        }
+        putchar(')');
+        if (type.info.func->returnType.kind != TYPE_VOID) {
+            putchar(' ');
+            printType(type.info.func->returnType);
+        }
+        break;
     }
 }
 

@@ -1,5 +1,5 @@
-func :: (foo: u32, bar: i32) {
-    if foo {
+func :: (foo: u32, bar: i32) u32 {
+    if foo != 0 {
         foo(
             bar + 10,
             @baz@,
@@ -8,14 +8,16 @@ func :: (foo: u32, bar: i32) {
     } else
         bar;
 
-    while x < 10  {
+    while foo < 10 {
         x += 1;
         break;
         continue;
         return x;
     }
 
-    var : u32 = bar + baz;
+    baz : u32 = 10;
+    var : u32 = foo + baz;
+    return var;
 }
 
 BIG :: 0x0984238092572034;

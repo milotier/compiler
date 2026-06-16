@@ -55,17 +55,12 @@ checkBinop(
     DataType type = {0};
 
     if (binop->type >= BINOP_FIRST_NON_ASS && binop->type <= BINOP_LAST_NON_ASS) {
-        DataType *leftType = checkExpr(&binop->left,
-                                             ctx,
-                                             scope,
-                                             visitedDecls);
-        DataType *rightType = checkExpr(&binop->right,
-                                              ctx,
-                                              scope,
-                                              visitedDecls);
+        DataType *leftType = checkExpr(&binop->left, ctx, scope, visitedDecls);
+        DataType *rightType = checkExpr(&binop->right, ctx, scope, visitedDecls);
+
         if (getTypeFamily(leftType) != getTypeFamily(rightType))
             error(ctx, binop->header.pos,
-                  "infix operators used on values in different type families");
+                  "infix operator used on values in different type families");
         if (getTypeFamily(leftType) == TYPE_INT) {
             if (binop->type >= BINOP_FIRST_LOG && binop->type <= BINOP_LAST_LOG)
                 error(ctx, binop->header.pos, "integers used in logical operator");
@@ -137,19 +132,19 @@ checkBinop(
                     SWAP(DataType *, leftType, rightType);
 
                 if (rightType->kind == TYPE_COMPTIME_INT) {
-                    rightType->width = leftType->width;
+                    rightType->info.width = leftType->info.width;
                     rightType->isSigned = leftType->isSigned;
                 }
 
                 if (leftType->isSigned != rightType->isSigned)
                     error(ctx, binop->header.pos,
-                          "infix operators used on integers of different signs");
+                          "infix operator used on integers of different signednesses");
                 type.isSigned = leftType->isSigned;
 
-                if (leftType->width != rightType->width)
+                if (leftType->info.width != rightType->info.width)
                     error(ctx, binop->header.pos,
-                          "infix operators used on integers of different widths");
-                type.width = leftType->width;
+                          "infix operator used on integers of different widths");
+                type.info.width = leftType->info.width;
             }
         } else if (getTypeFamily(leftType) == TYPE_FLOAT) {
             if (leftType->kind == TYPE_COMPTIME_FLOAT &&
@@ -160,18 +155,12 @@ checkBinop(
                 type.kind = TYPE_FLOAT;
             }
 
-            if (binop->type >= BINOP_FIRST_BINARY &&
-                binop->type <= BINOP_LAST_BINARY)
-            {
+            if (binop->type >= BINOP_FIRST_BINARY && binop->type <= BINOP_LAST_BINARY)
                 error(ctx, binop->header.pos,
                       "floating-point numbers used in bitwise operator");
-            }
-            if (binop->type >= BINOP_FIRST_LOG &&
-                binop->type <= BINOP_LAST_LOG)
-            {
+            if (binop->type >= BINOP_FIRST_LOG && binop->type <= BINOP_LAST_LOG)
                 error(ctx, binop->header.pos,
                       "floating-point numbers used in logical operator");
-            }
             if (binop->type == BINOP_MOD)
                 error(ctx, binop->header.pos,
                       "floating-point numbers used in modulo operator");
@@ -179,8 +168,8 @@ checkBinop(
             if (leftType->kind == TYPE_COMPTIME_FLOAT)
                 SWAP(DataType *, leftType, rightType);
             if (rightType->kind == TYPE_COMPTIME_FLOAT)
-                rightType->width = leftType->width;
-            if (leftType->width != rightType->width)
+                rightType->info.width = leftType->info.width;
+            if (leftType->info.width != rightType->info.width)
                 error(ctx, binop->header.pos,
                       "infix operator used on floating-point numbers of different widths");
 
@@ -199,22 +188,15 @@ checkBinop(
                 }
             }
 
-            type.width = leftType->width;
+            type.info.width = leftType->info.width;
         } else if (leftType->kind == TYPE_BOOL) {
             type.kind = TYPE_BOOL;
-            if (binop->type >= BINOP_FIRST_ARITH &&
-                binop->type <= BINOP_LAST_ARITH)
-            {
+            if (binop->type >= BINOP_FIRST_ARITH && binop->type <= BINOP_LAST_ARITH)
                 error(ctx, binop->header.pos, "booleans used in arithmetic operator");
-            }
-            if (binop->type >= BINOP_FIRST_BINARY &&
-                binop->type <= BINOP_LAST_BINARY)
-            {
+            if (binop->type >= BINOP_FIRST_BINARY && binop->type <= BINOP_LAST_BINARY)
                 error(ctx, binop->header.pos, "booleans used in bitwise operator");
-            }
 
-            if (binop->left->type == EXPR_BOOL &&
-                binop->right->type == EXPR_BOOL)
+            if (binop->left->type == EXPR_BOOL && binop->right->type == EXPR_BOOL)
             {
                 switch (binop->type) {
                     HANDLE_BINOP(BINOP_AND, &&, BoolExpr)
@@ -231,17 +213,13 @@ checkBinop(
             error(ctx, binop->header.pos, "invalid type for arithmetic infix operator");
         }
 
-        if (binop->type >= BINOP_FIRST_CMP &&
-            binop->type <= BINOP_LAST_CMP)
-        {
+        if (binop->type >= BINOP_FIRST_CMP && binop->type <= BINOP_LAST_CMP)
             type.kind = TYPE_BOOL;
-        }
     }
 
     return type;
 }
 
-#include <stdio.h>
 static DataType
 checkUnop(
     ExprHeader **exprPtr,
@@ -257,7 +235,8 @@ checkUnop(
     case UNOP_NOT: {
         int family = getTypeFamily(childType);
         if (!(family == TYPE_BOOL || family == TYPE_INT))
-            error(ctx, unop->header.pos, "bitwise negation of value not of integer or boolean type");
+            error(ctx, unop->header.pos,
+                  "not-operator used on value not of integer or boolean type");
 
         if (unop->child->type == EXPR_INT) {
             IntExpr *result = allocIntExpr();
@@ -294,6 +273,71 @@ checkUnop(
     return type;
 }
 
+static void
+checkStmt(
+    StmtHeader *stmt,
+    Context *ctx,
+    Scope *scope,
+    DeclList *visitedDecls
+) {
+    switch (stmt->type) {
+    case STMT_EXPR:
+        checkExpr(&((ExprStmt *)stmt)->expr, ctx, scope, visitedDecls);
+        break;
+    case STMT_RETURN:
+        break;
+    case STMT_BREAK:
+        break;
+    case STMT_CONTINUE:
+        break;
+    case STMT_IF: {
+        IfStmt *ifStmt = (IfStmt *)stmt;
+        DataType *conditionType = checkExpr(&ifStmt->condition, ctx, scope, visitedDecls);
+        if (conditionType->kind != TYPE_BOOL)
+            error(ctx, ifStmt->condition->pos, "if statement condition must be a bool");
+        checkStmt(ifStmt->ifBranch, ctx, scope, visitedDecls);
+        if (ifStmt->elseBranch)
+            checkStmt(ifStmt->elseBranch, ctx, scope, visitedDecls);
+    } break;
+    case STMT_WHILE: {
+        WhileStmt *whileStmt = (WhileStmt *)stmt;
+        DataType *conditionType = checkExpr(&whileStmt->condition, ctx, scope, visitedDecls);
+        if (conditionType->kind != TYPE_BOOL)
+            error(ctx, whileStmt->condition->pos, "while statement condition must be a bool");
+        checkStmt(whileStmt->statement, ctx, scope, visitedDecls);
+    } break;
+    case STMT_BLOCK: {
+        BlockStmt *block = (BlockStmt *)stmt;
+        unsigned int i;
+        for (i = 0; i < block->statements.len; i++)
+            checkStmt(block->statements.data[i], ctx, &block->scope, visitedDecls);
+    } break;
+    case STMT_DECL:
+        checkDecl(&((DeclStmt *)stmt)->decl, ctx, scope, visitedDecls);
+        break;
+    }
+}
+
+/* TODO: split up type-checking into first getting types and then checking function bodies */
+static DataType
+checkFunc(
+    ExprHeader *expr,
+    Context *ctx,
+    DeclList *visitedDecls
+) {
+    FuncExpr *func = (FuncExpr *)expr;
+    DataType type = {0};
+    unsigned int i;
+
+    type.kind = TYPE_FUNC;
+    type.info.func = func;
+
+    for (i = 0; i < func->statements.len; i++)
+        checkStmt(func->statements.data[i], ctx, &func->scope, visitedDecls);
+
+    return type;
+}
+
 static DataType *
 checkExpr(
     ExprHeader **exprPtr,
@@ -314,6 +358,10 @@ checkExpr(
         type.kind = TYPE_BOOL;
         break;
     case EXPR_STR: /*TODO*/ break;
+
+    case EXPR_FUNC:
+        type = checkFunc(*exprPtr, ctx, visitedDecls);
+        break;
 
     case EXPR_UNOP:
         type = checkUnop(exprPtr, ctx, scope, visitedDecls);
@@ -384,22 +432,23 @@ checkDecl(
             error(ctx, decl->pos, "a variable cannot be declared with a compile-time type");
     }
 
-    if (decl->type.kind == TYPE_INT && valueType->kind == TYPE_INT &&
-        decl->type.width != valueType->width)
-    {
-        error(ctx, decl->pos, "width of assigned value does not match type");
+    if (decl->type.kind == TYPE_INT && valueType->kind == TYPE_INT) {
+        if (decl->type.info.width != valueType->info.width)
+            error(ctx, decl->pos, "width of assigned value does not match type");
+        if (decl->type.isSigned != valueType->isSigned)
+            error(ctx, decl->pos, "signedness of assigned value does not match type");
     }
 
     if (decl->type.kind == TYPE_INT && decl->value->type == EXPR_INT) {
         BigInt *value = &((IntExpr *)decl->value)->value;
         if (decl->type.isSigned) {
-            BigInt maxValue = bigIntFromI64((1ll << (decl->type.width - 1)) - 1);
+            BigInt maxValue = bigIntFromI64((1ll << (decl->type.info.width - 1)) - 1);
             if (bigIntCmp(value, &maxValue) > 0)
                 error(ctx, decl->pos, "assigned integer is too large");
         } else {
-            BigInt maxValue = bigIntFromU64(decl->type.width == 64 ?
+            BigInt maxValue = bigIntFromU64(decl->type.info.width == 64 ?
                                             ~0ull :
-                                            (1ull << decl->type.width) - 1);
+                                            (1ull << decl->type.info.width) - 1);
             if (bigIntCmp(value, &maxValue) > 0)
                 error(ctx, decl->pos, "assigned integer is too large");
         }
